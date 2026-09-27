@@ -1,0 +1,198 @@
+/* ============================================================
+   Design tokens — graphite mission-control palette.
+   Chosen deliberately: aviation instrument panels are flat, dark,
+   high-contrast, with monospaced numeric readouts. Not a generic
+   SaaS dashboard palette.
+   ============================================================ */
+:root {
+  --bg-0: #101318;
+  --bg-1: #171b22;
+  --bg-2: #1e232c;
+  --border: #2a3038;
+  --border-strong: #3a424e;
+  --text-primary: #e7eaee;
+  --text-secondary: #8b93a1;
+  --text-muted: #5a6270;
+  --accent: #2dd4bf;
+  --accent-dim: #1a3d38;
+  --warning: #f5a524;
+  --danger: #e5484d;
+  --danger-dim: #3a1e1f;
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  --radius: 6px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bg-0);
+  color: var(--text-primary);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+}
+
+/* ---- Top bar ---- */
+#topbar {
+  height: 52px;
+  flex-shrink: 0;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 24px;
+}
+
+#topbar .brand {
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#topbar .brand .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent);
+}
+
+#tabs { display: flex; gap: 4px; }
+
+.tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.tab-btn:hover { color: var(--text-primary); background: var(--bg-2); }
+.tab-btn.active { color: var(--bg-0); background: var(--accent); font-weight: 500; }
+
+#topbar .spacer { flex: 1; }
+
+#fleet-summary {
+  display: flex;
+  gap: 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+#fleet-summary b { color: var(--text-primary); font-weight: 500; }
+
+/* ---- Main content area (swaps per tab) ---- */
+#main { flex: 1; overflow: hidden; position: relative; }
+.view { display: none; height: 100%; }
+.view.active { display: flex; }
+
+/* ---- Map view ---- */
+#map-view { }
+#sidebar {
+  width: 220px;
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+  padding: 12px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+#sidebar h3 { font-size: 11px; color: var(--text-muted); font-weight: 500; letter-spacing: 0.03em; margin-bottom: 10px; }
+
+.uav-item {
+  padding: 10px; margin-bottom: 6px; border-radius: var(--radius); cursor: pointer;
+  background: var(--bg-2); border: 1px solid var(--border); font-size: 13px;
+  transition: border-color 0.15s;
+}
+.uav-item.active { border-color: var(--accent); }
+.uav-item .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 8px; }
+.dot.connected { background: var(--accent); }
+.dot.disconnected { background: var(--danger); }
+.uav-item .mode { color: var(--text-muted); font-size: 11px; font-family: var(--font-mono); margin-top: 3px; }
+
+#map { flex: 1; }
+
+#rightpanel {
+  width: 280px;
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+  padding: 14px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+#rightpanel h3 { font-size: 11px; color: var(--text-muted); font-weight: 500; letter-spacing: 0.03em; margin: 16px 0 8px; }
+#rightpanel h3:first-child { margin-top: 0; }
+
+.telemetry-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 13px; padding: 5px 0; border-bottom: 1px solid var(--border);
+}
+.telemetry-row span:first-child { color: var(--text-secondary); }
+.telemetry-row span:last-child { font-family: var(--font-mono); color: var(--accent); font-size: 13px; }
+
+.action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+button.act {
+  background: var(--bg-2); color: var(--text-primary); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); padding: 9px; font-size: 12px; cursor: pointer;
+  font-family: var(--font-ui); transition: border-color 0.15s, background 0.15s;
+}
+button.act:hover { border-color: var(--accent); }
+button.act.primary { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+button.act.danger { background: var(--danger-dim); border-color: var(--danger); color: #f5b8ba; }
+
+#wp-list { font-size: 12px; max-height: 120px; overflow-y: auto; margin: 8px 0; font-family: var(--font-mono); color: var(--text-secondary); }
+#wp-list div { padding: 3px 0; border-bottom: 1px dashed var(--border); }
+.hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
+
+/* ---- Fleet tab ---- */
+#fleet-view { flex-direction: column; padding: 20px; overflow-y: auto; }
+table.fleet-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.fleet-table th {
+  text-align: left; font-weight: 500; color: var(--text-muted); font-size: 11px;
+  letter-spacing: 0.03em; padding: 10px 12px; border-bottom: 1px solid var(--border-strong);
+}
+table.fleet-table td { padding: 12px; border-bottom: 1px solid var(--border); }
+table.fleet-table tr:hover td { background: var(--bg-1); }
+.mono { font-family: var(--font-mono); color: var(--text-secondary); }
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-family: var(--font-mono);
+}
+.badge.connected { background: var(--accent-dim); color: var(--accent); }
+.badge.disconnected { background: var(--danger-dim); color: #f5b8ba; }
+.cam-link { color: var(--accent); font-size: 12px; text-decoration: none; }
+.cam-link:hover { text-decoration: underline; }
+.no-cam { color: var(--text-muted); font-size: 12px; }
+
+/* ---- Actions tab ---- */
+#actions-view { flex-direction: column; padding: 20px; gap: 20px; overflow-y: auto; }
+.actions-panel { max-width: 640px; }
+.actions-panel h2 { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+.actions-panel .sub { color: var(--text-secondary); font-size: 13px; margin-bottom: 16px; }
+
+.select-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
+.select-row {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius);
+  cursor: pointer; font-size: 13px;
+}
+.select-row input { accent-color: var(--accent); }
+.select-row .uid { flex: 1; }
+.select-row .status { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+
+.command-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.command-grid button { padding: 12px 8px; font-size: 13px; }
+
+#batch-log {
+  margin-top: 16px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);
+  max-height: 160px; overflow-y: auto; border-top: 1px solid var(--border); padding-top: 10px;
+}
+#batch-log div { padding: 3px 0; }
+#batch-log .ok { color: var(--accent); }
+#batch-log .fail { color: var(--danger); }
