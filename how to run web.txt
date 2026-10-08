@@ -1,0 +1,26 @@
+wsl -d ubuntu-22.04
+cd ~/ardupilot/ArduCopter
+
+Terminal 1 (UAV 1):
+
+Bash
+../Tools/autotest/sim_vehicle.py -v ArduCopter -I0 --sysid=1 --out=udp:127.0.0.1:14540
+Terminal 2 (UAV 2):
+
+Bash
+../Tools/autotest/sim_vehicle.py -v ArduCopter -I1 --sysid=2 --out=udp:127.0.0.1:14541
+Terminal 3 (UAV 3):
+
+Bash
+../Tools/autotest/sim_vehicle.py -v ArduCopter -I2 --sysid=3 --out=udp:127.0.0.1:14542
+
+
+
+backend
+ source venv/bin/activate
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+frontend
+python3 -m http.server 5500
+
+http://localhost:5500

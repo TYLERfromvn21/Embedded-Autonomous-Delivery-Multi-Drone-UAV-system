@@ -17,10 +17,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-CENTER_LAT = 10.762622
-CENTER_LON = 106.660172
+CENTER_LAT = 10.7721
+CENTER_LON = 106.6578
 
 active_websockets: list[WebSocket] = []
 
@@ -43,9 +43,15 @@ def compute_states():
         lat = CENTER_LAT + cfg["radius"] * math.sin(angle)
         lon = CENTER_LON + cfg["radius"] * math.cos(angle)
         heading = (math.degrees(angle) + 90) % 360
+        altitude_phase = t * 0.4 + cfg["phase"]
+        altitude = cfg["alt"] + 2 * math.sin(altitude_phase)
         cfg["battery"] = max(0, cfg["battery"] - 0.01)
         states.append({
-            "uav_id": uav_id, "lat": lat, "lon": lon, "alt": cfg["alt"], "heading": heading,
+            "uav_id": uav_id, "lat": lat, "lon": lon, "alt": altitude,
+            "absolute_alt": altitude + 30, "heading": heading,
+            "pitch_deg": 7 * math.cos(altitude_phase), "roll_deg": 8 * math.cos(angle),
+            "vertical_speed_m_s": 0.8 * math.cos(altitude_phase),
+            "is_landed": False,
             "battery_percent": round(cfg["battery"], 1), "flight_mode": cfg["mode"], "armed": cfg["armed"],
             "connected": True, "camera_url": cfg["camera_url"], "waypoints": cfg["waypoints"],
         })
@@ -74,13 +80,32 @@ class ActionResponse(BaseModel):
     latency_ms: float | None = None
 
 
-@app.post("/vehicles/{uav_id}/{action}", response_model=ActionResponse)
-async def fake_action(uav_id: str, action: str):
-    if uav_id in fake_state and action == "arm":
-        fake_state[uav_id]["armed"] = True
-    if uav_id in fake_state and action == "disarm":
-        fake_state[uav_id]["armed"] = False
-    return ActionResponse(success=True, message=f"[MOCK] {action} for {uav_id}", latency_ms=12.3)
+class AltitudeRequest(BaseModel):
+    altitude_m: float = Field(ge=1, le=120)
+
+
+class SpeedRequest(BaseModel):
+    speed_m_s: float = Field(ge=0.5, le=30)
+
+
+@app.post("/vehicles/{uav_id}/altitude", response_model=ActionResponse)
+async def fake_change_altitude(uav_id: str, payload: AltitudeRequest):
+    if uav_id not in fake_state:
+        return ActionResponse(success=False, message=f"Unknown UAV: {uav_id}")
+    if not fake_state[uav_id]["armed"]:
+        return ActionResponse(success=False, message="Vehicle must be armed before changing altitude.")
+    fake_state[uav_id]["alt"] = payload.altitude_m
+    return ActionResponse(success=True, message=f"[MOCK] Altitude target set for {uav_id}", latency_ms=12.3)
+
+
+@app.post("/vehicles/{uav_id}/speed", response_model=ActionResponse)
+async def fake_change_speed(uav_id: str, payload: SpeedRequest):
+    if uav_id not in fake_state:
+        return ActionResponse(success=False, message=f"Unknown UAV: {uav_id}")
+    if not fake_state[uav_id]["armed"]:
+        return ActionResponse(success=False, message="Vehicle must be armed before changing flight speed.")
+    fake_state[uav_id]["speed_m_s"] = payload.speed_m_s
+    return ActionResponse(success=True, message=f"[MOCK] Speed target set for {uav_id}", latency_ms=12.3)
 
 
 @app.post("/vehicles/batch/{action_name}")
@@ -106,6 +131,28 @@ async def fake_mission(uav_id: str, payload: dict):
 @app.post("/vehicles/{uav_id}/mission/start", response_model=ActionResponse)
 async def fake_start_mission(uav_id: str):
     return ActionResponse(success=True, message=f"[MOCK] {uav_id} started mission", latency_ms=9.4)
+
+
+@app.post("/vehicles/{uav_id}/mission/pause", response_model=ActionResponse)
+async def fake_pause_mission(uav_id: str):
+    if uav_id not in fake_state:
+        return ActionResponse(success=False, message=f"Unknown UAV: {uav_id}")
+    return ActionResponse(success=True, message=f"[MOCK] {uav_id} paused mission", latency_ms=9.4)
+
+
+@app.post("/vehicles/{uav_id}/{action}", response_model=ActionResponse)
+async def fake_action(uav_id: str, action: str):
+    if uav_id not in fake_state:
+        return ActionResponse(success=False, message=f"Unknown UAV: {uav_id}")
+    if action == "arm":
+        fake_state[uav_id]["armed"] = True
+    if action == "disarm":
+        fake_state[uav_id]["armed"] = False
+    if action == "hold":
+        fake_state[uav_id]["mode"] = "LOITER"
+    if action == "rtl":
+        fake_state[uav_id]["mode"] = "RTL"
+    return ActionResponse(success=True, message=f"[MOCK] {action} for {uav_id}", latency_ms=12.3)
 
 
 @app.websocket("/ws/telemetry")

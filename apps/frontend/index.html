@@ -16,6 +16,7 @@
     <button class="tab-btn active" data-view="map-view">Map</button>
     <button class="tab-btn" data-view="fleet-view">Fleet</button>
     <button class="tab-btn" data-view="actions-view">Actions</button>
+    <button class="tab-btn" data-view="stations-view">Landing stations</button>
   </div>
   <div class="spacer"></div>
   <div id="fleet-summary"></div>
@@ -26,20 +27,40 @@
   <!-- ===== Map tab ===== -->
   <div id="map-view" class="view active">
     <div id="sidebar">
-      <h3>Fleet</h3>
+      <section id="map-flight-panel" class="map-flight-panel">
+        <div class="flight-target-controls">
+          <label>Target altitude above takeoff (m)<input id="target-altitude" type="number" min="1" max="120" step="0.5" value="5"></label>
+          <label>Flight speed (m/s)<input id="target-speed" type="number" min="0.5" max="30" step="0.5" value="5"></label>
+          <button class="act" id="btn-change-altitude" type="button">Change altitude</button>
+          <button class="act" id="btn-change-speed" type="button">Change speed</button>
+        </div>
+        <h3>Flight status — <span id="active-uav-label">-</span></h3>
+        <div class="flight-status">
+          <div class="attitude-indicator" aria-label="Aircraft pitch and roll">
+            <div class="attitude-horizon"><div class="attitude-ground"></div></div>
+            <span class="attitude-center"></span>
+          </div>
+          <div class="flight-status-readout">
+            <strong id="flight-trend">HOLDING ALTITUDE</strong>
+            <span id="t-vertical-speed">Vertical speed: -</span>
+            <span id="t-attitude">Pitch / roll: -</span>
+          </div>
+        </div>
+        <div class="telemetry-row"><span>Connection</span><span id="t-connected">-</span></div>
+        <div class="telemetry-row"><span>Mode</span><span id="t-mode">-</span></div>
+        <div class="telemetry-row"><span>Armed</span><span id="t-armed">-</span></div>
+        <div class="flight-mode-heading">ArduCopter modes</div>
+        <div id="flight-modes" class="flight-modes"></div>
+        <div class="telemetry-row"><span>Battery (%)</span><span id="t-battery">-</span></div>
+        <div class="telemetry-row"><span>Altitude (m)</span><span id="t-alt">-</span></div>
+        <div class="telemetry-row"><span>Heading (°)</span><span id="t-heading">-</span></div>
+        <div class="telemetry-row"><span>Lat / Lon</span><span id="t-latlon">-</span></div>
+      </section>
+      <div class="sidebar-section-heading">Fleet</div>
       <div id="uav-list"></div>
     </div>
     <div id="map"></div>
     <div id="rightpanel">
-      <h3>Telemetry — <span id="active-uav-label">-</span></h3>
-      <div class="telemetry-row"><span>Connection</span><span id="t-connected">-</span></div>
-      <div class="telemetry-row"><span>Mode</span><span id="t-mode">-</span></div>
-      <div class="telemetry-row"><span>Armed</span><span id="t-armed">-</span></div>
-      <div class="telemetry-row"><span>Battery (%)</span><span id="t-battery">-</span></div>
-      <div class="telemetry-row"><span>Altitude (m)</span><span id="t-alt">-</span></div>
-      <div class="telemetry-row"><span>Heading (°)</span><span id="t-heading">-</span></div>
-      <div class="telemetry-row"><span>Lat / Lon</span><span id="t-latlon">-</span></div>
-
       <h3>Actions</h3>
       <div class="action-grid">
         <button class="act primary" data-action="arm">Arm</button>
@@ -48,14 +69,24 @@
         <button class="act" data-action="land">Land</button>
         <button class="act danger" data-action="rtl">RTL</button>
         <button class="act" data-action="hold">Hold</button>
+        <button class="act primary" id="btn-auto-mission" type="button">Auto / Start mission</button>
+        <button class="act" id="btn-loiter" type="button">Loiter / Hold</button>
+        <button class="act" id="btn-pause-mission" type="button">Pause mission</button>
+        <button class="act" id="btn-resume-mission" type="button">Resume mission</button>
+        <button class="act danger" id="btn-abort-landing" type="button">Abort landing (RTL)</button>
       </div>
 
       <h3>Mission</h3>
-      <div class="hint">Click on the map to add a waypoint for the selected UAV.</div>
+      <div class="hint">Click on the map to add a waypoint for the selected UAV. Draft waypoints are kept separately for each UAV.</div>
+      <div id="route-list" class="route-list"></div>
+      <div id="collision-alerts" class="collision-alerts" aria-live="polite"></div>
       <div id="wp-list"></div>
       <div class="action-grid">
         <button class="act" id="btn-upload-mission">Upload mission</button>
         <button class="act danger" id="btn-clear-waypoints">Clear waypoints</button>
+      </div>
+      <div class="action-grid" style="margin-top:6px;">
+        <button class="act danger" id="btn-clear-uploaded-mission" style="grid-column: 1 / -1;" disabled>Clear uploaded mission</button>
       </div>
       <div class="action-grid" style="margin-top:6px;">
         <button class="act primary" id="btn-start-mission" style="grid-column: 1 / -1;">Start mission</button>
@@ -78,19 +109,94 @@
 
   <!-- ===== Actions tab ===== -->
   <div id="actions-view" class="view">
-    <div class="actions-panel">
-      <h2>Fleet commands</h2>
-      <div class="sub">Select any number of UAVs, then send one command to all of them at once.</div>
-      <div id="select-list" class="select-list"></div>
-      <div class="command-grid">
-        <button class="act primary" data-batch-action="arm">Arm</button>
-        <button class="act danger" data-batch-action="disarm">Disarm</button>
-        <button class="act" data-batch-action="hold">Hold</button>
-        <button class="act danger" data-batch-action="rtl">RTL</button>
-        <button class="act danger" data-batch-action="land">Land</button>
-      </div>
-      <div id="batch-log"></div>
+    <div class="actions-layout">
+      <section class="actions-panel">
+        <h2>Fleet commands</h2>
+        <div class="sub">Select UAVs for fleet commands, or open one UAV to inspect telemetry and send individual actions.</div>
+        <div id="select-list" class="select-list"></div>
+        <div class="batch-actions">
+          <h3>Selected UAVs</h3>
+          <div class="command-grid">
+            <button class="act primary" data-batch-action="arm">Arm</button>
+            <button class="act danger" data-batch-action="disarm">Disarm</button>
+            <button class="act" data-batch-action="hold">Hold</button>
+            <button class="act danger" data-batch-action="rtl">RTL</button>
+            <button class="act danger" data-batch-action="land">Land</button>
+          </div>
+          <div id="batch-log"></div>
+        </div>
+      </section>
+      <aside class="action-detail-panel">
+        <h2>UAV details — <span id="action-uav-label">Select a UAV</span></h2>
+        <div id="action-uav-empty" class="hint">Choose “Details” on a fleet row to view its live telemetry and individual flight controls.</div>
+        <div id="action-uav-details" hidden>
+          <div class="telemetry-row"><span>Connection</span><span id="action-connected">-</span></div>
+          <div class="telemetry-row"><span>Mode</span><span id="action-mode">-</span></div>
+          <div class="telemetry-row"><span>Armed</span><span id="action-armed">-</span></div>
+          <div class="telemetry-row"><span>Battery (%)</span><span id="action-battery">-</span></div>
+          <div class="telemetry-row"><span>Altitude (m)</span><span id="action-altitude">-</span></div>
+          <div class="telemetry-row"><span>Heading (°)</span><span id="action-heading">-</span></div>
+          <div class="telemetry-row"><span>Vertical speed</span><span id="action-vertical-speed">-</span></div>
+          <div class="telemetry-row"><span>Lat / Lon</span><span id="action-position">-</span></div>
+          <div class="flight-target-controls">
+            <label>Target altitude (m)<input id="action-target-altitude" type="number" min="1" max="120" step="0.5" value="5"></label>
+            <label>Flight speed (m/s)<input id="action-target-speed" type="number" min="0.5" max="30" step="0.5" value="5"></label>
+            <button class="act" id="action-change-altitude" type="button">Change altitude</button>
+            <button class="act" id="action-change-speed" type="button">Change speed</button>
+          </div>
+          <div class="flight-status">
+            <div class="attitude-indicator" aria-label="Aircraft pitch and roll">
+              <div id="action-attitude-horizon" class="attitude-horizon"><div class="attitude-ground"></div></div>
+              <span class="attitude-center"></span>
+            </div>
+            <div class="flight-status-readout">
+              <strong id="action-flight-trend">-</strong>
+              <span id="action-attitude">Pitch / roll: -</span>
+            </div>
+          </div>
+          <div class="flight-mode-heading">ArduCopter modes</div>
+          <div id="action-flight-modes" class="flight-modes"></div>
+          <h3>Individual actions</h3>
+          <div class="individual-action-grid">
+            <button class="act primary" data-detail-action="arm">Arm</button>
+            <button class="act danger" data-detail-action="disarm">Disarm</button>
+            <button class="act" data-detail-action="takeoff">Takeoff</button>
+            <button class="act" data-detail-action="land">Land</button>
+            <button class="act danger" data-detail-action="rtl">RTL</button>
+            <button class="act" data-detail-action="hold">Loiter / Hold</button>
+            <button class="act primary" data-detail-action="auto">Auto / Start mission</button>
+            <button class="act" data-detail-action="pause">Pause mission</button>
+            <button class="act" data-detail-action="resume">Resume mission</button>
+            <button class="act danger" data-detail-action="abort">Abort landing (RTL)</button>
+          </div>
+        </div>
+      </aside>
     </div>
+  </div>
+
+  <!-- ===== Landing stations tab ===== -->
+  <div id="stations-view" class="view">
+    <section class="stations-panel">
+      <div class="stations-heading">
+        <div>
+          <h2>Landing stations</h2>
+          <p class="sub">Manage landing-pad locations and see landed UAVs nearby.</p>
+        </div>
+        <button class="act primary" id="btn-add-station">Add station</button>
+      </div>
+      <form id="station-form" class="station-form" hidden>
+        <label>Station name<input name="name" required maxlength="60" autocomplete="off"></label>
+        <label>Latitude<input name="lat" type="number" min="-90" max="90" step="any" required></label>
+        <label>Longitude<input name="lon" type="number" min="-180" max="180" step="any" required></label>
+        <label>Device ID (optional)<input name="deviceId" maxlength="80" autocomplete="off"></label>
+        <div class="station-form-actions">
+          <button class="act primary" type="submit">Save station</button>
+          <button class="act" id="btn-cancel-station" type="button">Cancel</button>
+        </div>
+      </form>
+      <div id="station-message" class="hint" aria-live="polite"></div>
+      <div id="station-list" class="station-list"></div>
+    </section>
   </div>
 
 </div>

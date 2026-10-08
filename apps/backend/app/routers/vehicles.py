@@ -5,7 +5,7 @@ REST endpoints for fleet status, single-vehicle actions, and batch actions
 (sending one command to an arbitrary set of UAVs at once).
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -26,6 +26,14 @@ class BatchActionResult(BaseModel):
     success: bool
     message: str = ""
     latency_ms: float | None = None
+
+
+class AltitudeRequest(BaseModel):
+    altitude_m: float
+
+
+class SpeedRequest(BaseModel):
+    speed_m_s: float
 
 
 def register_routes(router: APIRouter, manager):
@@ -53,8 +61,20 @@ def register_routes(router: APIRouter, manager):
         return await _run_action(uav_id, "disarm")
 
     @router.post("/vehicles/{uav_id}/takeoff", response_model=ActionResponse)
-    async def takeoff(uav_id: str, altitude: float = 10.0):
+    async def takeoff(uav_id: str, altitude: float = Query(default=5.0, ge=1, le=120)):
         return await _run_action(uav_id, "takeoff", altitude)
+
+    @router.post("/vehicles/{uav_id}/altitude", response_model=ActionResponse)
+    async def change_altitude(uav_id: str, request: AltitudeRequest):
+        if not 1.0 <= request.altitude_m <= 120.0:
+            raise HTTPException(status_code=422, detail="Altitude must be between 1 and 120 m")
+        return await _run_action(uav_id, "change_altitude", request.altitude_m)
+
+    @router.post("/vehicles/{uav_id}/speed", response_model=ActionResponse)
+    async def change_speed(uav_id: str, request: SpeedRequest):
+        if not 0.5 <= request.speed_m_s <= 30.0:
+            raise HTTPException(status_code=422, detail="Speed must be between 0.5 and 30 m/s")
+        return await _run_action(uav_id, "change_speed", request.speed_m_s)
 
     @router.post("/vehicles/{uav_id}/land", response_model=ActionResponse)
     async def land(uav_id: str):
@@ -72,7 +92,7 @@ def register_routes(router: APIRouter, manager):
     # This is what backs the Actions tab's "select N vehicles, pick a command" flow.
     # Commands run concurrently (asyncio.gather), not one-by-one, so sending
     # RTL to 50 selected UAVs takes roughly as long as sending it to 1.
-    @router.post("/vehicles/batch/{action_name}", response_model=list[BatchActionResult])
+    @router.post("/fleet/batch/{action_name}", response_model=list[BatchActionResult])
     async def batch_action(action_name: str, body: BatchActionRequest):
         import asyncio
 

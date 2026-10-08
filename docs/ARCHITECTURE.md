@@ -13,10 +13,16 @@ UAV 3 ──┘                                                                 
   command runs as a concurrent coroutine, not a dedicated OS thread. This is why the same
   process can hold 3 (or, per docs/SCALING.md, far more) live connections without the
   per-connection overhead a thread-per-vehicle model would have.
-- The frontend is three tabs sharing one WebSocket-fed state object (`state.js`):
-  - **Map** — position, telemetry panel, single-vehicle actions, mission drawing
+- The frontend tabs share one WebSocket-fed state object (`state.js`):
+  - **Map** — position, attitude/climb telemetry, per-UAV missions and route-conflict estimates
   - **Fleet** — table view: status, position, battery, camera link, current route
   - **Actions** — multi-select + batch command dispatch (`/vehicles/batch/{action}`)
+  - **Landing stations** — browser-persisted pad locations and landed-UAV occupancy
+
+Attitude, vertical speed and landed-state fields come from MAVSDK telemetry. Landing station
+records are stored in browser local storage and are not connected to station hardware.
+Route-conflict assumptions and limitations are documented in
+[ROUTE_CONFLICT_MODEL.md](ROUTE_CONFLICT_MODEL.md).
 
 ## Why the map previously showed nothing
 

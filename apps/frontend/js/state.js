@@ -9,6 +9,7 @@ export const state = {
   vehicles: [],       // latest fleet snapshot from the WebSocket
   activeUav: null,     // uav_id selected in the Map tab's sidebar
   selectedForBatch: new Set(), // uav_ids checked in the Actions tab
+  draftRoutes: {},    // waypoint drafts indexed by uav_id
   listeners: [],       // callbacks to notify when `vehicles` updates
 };
 

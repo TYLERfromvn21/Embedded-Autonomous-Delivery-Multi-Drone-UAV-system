@@ -11,7 +11,7 @@ from pydantic import BaseModel
 class Waypoint(BaseModel):
     lat: float
     lon: float
-    alt: float = 10.0
+    alt: float = 5.0
     speed_m_s: float = 5.0
 
 
@@ -38,6 +38,18 @@ def register_routes(router: APIRouter, manager):
         except Exception as e:
             return ActionResponse(success=False, message=str(e))
 
+    @router.delete("/vehicles/{uav_id}/mission", response_model=ActionResponse)
+    async def clear_mission(uav_id: str):
+        try:
+            vehicle = manager.get(uav_id)
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        try:
+            latency_ms = await vehicle.clear_mission()
+            return ActionResponse(success=True, message=f"Cleared uploaded mission for {uav_id}", latency_ms=latency_ms)
+        except Exception as e:
+            return ActionResponse(success=False, message=str(e))
+
     @router.post("/vehicles/{uav_id}/mission/start", response_model=ActionResponse)
     async def start_mission(uav_id: str):
         try:
@@ -47,6 +59,18 @@ def register_routes(router: APIRouter, manager):
         try:
             latency_ms = await vehicle.start_mission()
             return ActionResponse(success=True, message=f"Mission started for {uav_id}", latency_ms=latency_ms)
+        except Exception as e:
+            return ActionResponse(success=False, message=str(e))
+
+    @router.post("/vehicles/{uav_id}/mission/pause", response_model=ActionResponse)
+    async def pause_mission(uav_id: str):
+        try:
+            vehicle = manager.get(uav_id)
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        try:
+            latency_ms = await vehicle.pause_mission()
+            return ActionResponse(success=True, message=f"Mission paused for {uav_id}", latency_ms=latency_ms)
         except Exception as e:
             return ActionResponse(success=False, message=str(e))
 

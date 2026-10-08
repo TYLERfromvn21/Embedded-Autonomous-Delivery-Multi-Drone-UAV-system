@@ -4,6 +4,7 @@ import { connectWebSocket } from './ws-client.js';
 import { initMap } from './map-view.js';
 import { initFleetView } from './fleet-view.js';
 import { initActionsView } from './actions-view.js';
+import { initStationsView } from './station-view.js';
 import { state, onStateUpdate } from './state.js';
 
 function initTabs() {
@@ -35,4 +36,5 @@ initFleetSummary();
 initMap();
 initFleetView();
 initActionsView();
+initStationsView();
 connectWebSocket();

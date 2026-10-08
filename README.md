@@ -23,14 +23,17 @@ uav-webgcs/
 │           ├── state.js           # shared fleet state
 │           ├── api.js             # REST calls
 │           ├── ws-client.js       # WebSocket client
-│           ├── map-view.js        # Map tab
+│           ├── map-view.js        # Map, per-UAV routes and flight telemetry
+│           ├── collision-check.js # Route clearance and uncertainty estimate
+│           ├── station-view.js    # Landing station registry and occupancy
 │           ├── fleet-view.js      # Fleet tab (table)
 │           ├── actions-view.js    # Actions tab (batch commands)
 │           └── app.js             # entry point, tab switching
 └── docs/
     ├── ARCHITECTURE.md
     ├── SCALING.md                 # answers "what about 1000+ UAVs"
-    └── COMMAND_FLOW.md            # answers "how fast is a command, prove it"
+    ├── COMMAND_FLOW.md            # answers "how fast is a command, prove it"
+    └── ROUTE_CONFLICT_MODEL.md    # route-risk assumptions and limitations
 ```
 
 Why this structure instead of one `main.py`/`index.html`: each router and each frontend
