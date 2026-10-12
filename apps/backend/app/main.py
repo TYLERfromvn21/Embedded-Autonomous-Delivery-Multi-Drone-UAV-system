@@ -30,10 +30,15 @@ router, telemetry_broadcaster = ws.register_routes(router, manager, TELEMETRY_BR
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await manager.connect_all()
-    task = asyncio.create_task(telemetry_broadcaster())
+    # Don't block application startup while waiting for UAV heartbeats. This
+    # lets the API start without SITL/hardware and lets Ctrl+C reach shutdown.
+    connect_task = asyncio.create_task(manager.connect_all())
+    broadcast_task = asyncio.create_task(telemetry_broadcaster())
     yield
-    task.cancel()
+    connect_task.cancel()
+    broadcast_task.cancel()
+    await asyncio.gather(connect_task, broadcast_task, return_exceptions=True)
+    await manager.shutdown()
 
 
 app = FastAPI(title="UAV Web GCS Backend", lifespan=lifespan)

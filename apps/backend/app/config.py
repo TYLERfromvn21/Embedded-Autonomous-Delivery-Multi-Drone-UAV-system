@@ -11,7 +11,7 @@ import os
 # Fleet configuration: uav_id -> MAVLink connection URL.
 # SITL default: udp://:<port>. Real hardware: serial:///dev/ttyUSB0:57600
 UAV_CONFIGS = {
-    "uav1": os.environ.get("UAV1_URL", "udp://:14540"),
+    "uav1": os.environ.get("UAV1_URL", "udp://0.0.0.0:14550"),
     "uav2": os.environ.get("UAV2_URL", "udp://:14541"),
     "uav3": os.environ.get("UAV3_URL", "udp://:14542"),
 }

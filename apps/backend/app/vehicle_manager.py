@@ -13,9 +13,12 @@ Adjust these in config.py to match the actual ports your team uses.
 
 import asyncio
 import json
+import logging
 import time
 from mavsdk import System
 from mavsdk.mavlink_direct import MavlinkMessage
+
+logger = logging.getLogger(__name__)
 
 
 class Vehicle:
@@ -51,12 +54,28 @@ class Vehicle:
         }
         self._tasks = []
 
+    async def shutdown(self):
+        """Stop telemetry subscriptions and the MAVSDK server process."""
+        tasks, self._tasks = self._tasks, []
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        # MAVSDK-Python currently has no public async close method. Its System
+        # implementation exposes this cleanup method for its child process.
+        stop_server = getattr(self.system, "_stop_mavsdk_server", None)
+        if stop_server is not None:
+            stop_server()
+
     async def connect(self):
+        logger.info("[%s] Waiting for heartbeat at %s", self.uav_id, self.connection_url)
         await self.system.connect(system_address=self.connection_url)
         async for state in self.system.core.connection_state():
             if state.is_connected:
                 self.connected = True
                 self.state["connected"] = True
+                logger.info("[%s] Heartbeat received; vehicle detected and connected", self.uav_id)
                 break
         self._tasks = [
             asyncio.create_task(self._watch_position()),
@@ -357,6 +376,9 @@ class VehicleManager:
 
     async def connect_all(self):
         await asyncio.gather(*(v.connect() for v in self.vehicles.values()))
+
+    async def shutdown(self):
+        await asyncio.gather(*(v.shutdown() for v in self.vehicles.values()))
 
     def get(self, uav_id: str) -> Vehicle:
         if uav_id not in self.vehicles:
