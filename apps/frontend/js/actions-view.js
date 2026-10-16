@@ -1,4 +1,4 @@
-import { state, onStateUpdate } from './state.js';
+﻿import { state, onStateUpdate } from './state.js?v=20261015-7';
 import {
   callBatchAction,
   callAction,
@@ -6,7 +6,8 @@ import {
   changeSpeed,
   pauseMission,
   startMission,
-} from './api.js';
+  setFlightMode,
+} from './api.js?v=20261015-7';
 
 const FLIGHT_SETTINGS_KEY = 'uav-web-gcs.flight-settings.v1';
 const DEFAULT_ALTITUDE_M = 5;
@@ -14,11 +15,11 @@ const DEFAULT_SPEED_M_S = 5;
 const CLIMB_THRESHOLD_M_S = 0.2;
 const ARDUCOPTER_MODES = [
   'STABILIZE', 'ACRO', 'ALT_HOLD', 'AUTO', 'GUIDED', 'LOITER', 'RTL', 'CIRCLE',
-  'LAND', 'DRIFT', 'SPORT', 'FLIP', 'AUTOTUNE', 'POSHOLD', 'BRAKE', 'THROW',
-  'AVOID_ADSB', 'GUIDED_NOGPS', 'SMART_RTL', 'FLOWHOLD', 'FOLLOW', 'ZIGZAG',
-  'SYSTEMID', 'AUTOROTATE', 'TURTLE', 'QSTABILIZE', 'QHOVER', 'QLOITER',
-  'QLAND', 'QRTL', 'QAUTOTUNE', 'QACRO',
+  'LAND', 'DRIFT', 'SPORT', 'FLIP', 'AUTOTUNE', 'POSHOLD', 'THROW', 'AVOID_ADSB',
+  'GUIDED_NOGPS', 'SMART_RTL', 'FLOWHOLD', 'FOLLOW', 'ZIGZAG', 'SYSTEMID',
+  'AUTOROTATE', 'AUTO_RTL', 'TURTLE',
 ];
+const PX4_MODE_COMMANDS = ['HOLD', 'RTL', 'LAND'];
 
 let selectedUavId = null;
 let vehicles = [];
@@ -117,6 +118,10 @@ export function initActionsView() {
   });
   document.getElementById('action-change-altitude').addEventListener('click', () => runTargetChange('altitude'));
   document.getElementById('action-change-speed').addEventListener('click', () => runTargetChange('speed'));
+  document.getElementById('action-flight-modes').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-flight-mode]');
+    if (button && selectedUavId) changeFlightMode(selectedUavId, button.dataset.flightMode);
+  });
 }
 
 function renderSelectList() {
@@ -169,7 +174,12 @@ function renderDetails() {
   emptyState.hidden = true;
   details.hidden = false;
   document.getElementById('action-connected').textContent = vehicle.connected ? 'Connected' : 'Disconnected';
+  document.getElementById('action-autopilot').textContent = vehicle.autopilot ?? 'Waiting for heartbeat';
   document.getElementById('action-mode').textContent = vehicle.flight_mode ?? '-';
+  document.getElementById('action-ground-speed').textContent = Number.isFinite(vehicle.ground_speed_m_s)
+    ? `${vehicle.ground_speed_m_s.toFixed(1)} m/s`
+    : '-';
+  renderFlightWarnings('action-flight-warnings', vehicle.flight_warnings);
   document.getElementById('action-armed').textContent = vehicle.armed ? 'ARMED' : 'DISARMED';
   document.getElementById('action-battery').textContent = vehicle.battery_percent ?? '-';
   document.getElementById('action-altitude').textContent = vehicle.alt == null ? '-' : `${vehicle.alt.toFixed(1)} m`;
@@ -177,9 +187,13 @@ function renderDetails() {
   document.getElementById('action-vertical-speed').textContent = vehicle.vertical_speed_m_s == null
     ? '-'
     : `${vehicle.vertical_speed_m_s >= 0 ? '+' : ''}${vehicle.vertical_speed_m_s.toFixed(2)} m/s`;
-  document.getElementById('action-position').textContent = vehicle.lat != null && vehicle.lon != null
+  document.getElementById('action-position').textContent = hasValidGpsPosition(vehicle)
     ? `${vehicle.lat.toFixed(5)}, ${vehicle.lon.toFixed(5)}`
     : '-';
+  document.getElementById('action-gps-fix').textContent = formatGpsFix(vehicle);
+  document.getElementById('action-telemetry-streams').textContent = Array.isArray(vehicle.telemetry_streams)
+    ? (vehicle.telemetry_streams.join(', ') || 'Waiting for telemetry')
+    : 'Not reported';
 
   const settings = settingsFor(vehicle.uav_id);
   const altitudeInput = document.getElementById('action-target-altitude');
@@ -212,10 +226,23 @@ function renderDetails() {
         ? 'descending'
         : 'steady';
 
-  const activeMode = String(vehicle.flight_mode ?? '').toUpperCase().split('.').pop();
-  document.getElementById('action-flight-modes').innerHTML = ARDUCOPTER_MODES.map((mode) =>
-    `<span class="mode-chip ${mode === activeMode ? 'active' : ''}">${mode}</span>`,
-  ).join('');
+  renderModeCommands('action-flight-modes', vehicle);
+}
+
+function hasValidGpsPosition(vehicle) {
+  return Number.isFinite(vehicle.lat)
+    && Number.isFinite(vehicle.lon)
+    && vehicle.lat >= -90 && vehicle.lat <= 90
+    && vehicle.lon >= -180 && vehicle.lon <= 180
+    && (vehicle.lat !== 0 || vehicle.lon !== 0);
+}
+
+function formatGpsFix(vehicle) {
+  const labels = ['No GPS', 'No fix', '2D fix', '3D fix', 'DGPS', 'RTK float', 'RTK fixed'];
+  const fixType = Number.isInteger(vehicle.gps_fix_type) ? vehicle.gps_fix_type : null;
+  if (fixType == null) return hasValidGpsPosition(vehicle) ? 'Position available' : 'Waiting for GPS';
+  const label = labels[fixType] ?? `Fix type ${fixType}`;
+  return vehicle.gps_satellites == null ? label : `${label} (${vehicle.gps_satellites} sats)`;
 }
 
 async function runBatch(action) {
@@ -244,6 +271,7 @@ async function runIndividual(action) {
   let result;
   if (action === 'auto' || action === 'resume') result = await startMission(vehicle.uav_id);
   else if (action === 'pause') result = await pauseMission(vehicle.uav_id);
+  else if (action === 'loiter') result = await setFlightMode(vehicle.uav_id, 'LOITER');
   else {
     const command = action === 'abort' ? 'rtl' : action === 'hold' ? 'hold' : action;
     const params = command === 'takeoff' ? { altitude: settings.altitudeM } : {};
@@ -275,4 +303,48 @@ function escapeHtml(value) {
     '"': '&quot;',
     "'": '&#39;',
   })[character]);
+}
+
+function isModeActive(mode, activeMode) {
+  if (mode === 'AUTO' && activeMode === 'MISSION') return true;
+  if (mode === 'STABILIZE' && activeMode === 'STABILIZED') return true;
+  if (mode === 'ALT_HOLD' && activeMode === 'HOLD') return true;
+  return mode === activeMode;
+}
+
+function renderModeCommands(elementId, vehicle) {
+  const element = document.getElementById(elementId);
+  const modes = vehicle.autopilot === 'PX4'
+    ? PX4_MODE_COMMANDS
+    : vehicle.autopilot === 'ArduPilot'
+      ? ARDUCOPTER_MODES
+      : [];
+  if (!modes.length) {
+    element.innerHTML = '<span class="mode-hint">Waiting for autopilot heartbeat</span>';
+    return;
+  }
+  const activeMode = String(vehicle.flight_mode ?? '').toUpperCase().split('.').pop();
+  element.innerHTML = modes.map((mode) => {
+    const label = vehicle.autopilot === 'ArduPilot' && mode === 'ALT_HOLD'
+      ? 'HOLD'
+      : vehicle.autopilot === 'PX4' && mode === 'HOLD'
+        ? 'HOLD / LOITER'
+        : mode;
+    const title = vehicle.autopilot === 'PX4' && mode === 'HOLD'
+      ? 'PX4 Hold is the position-hold action; the Loiter button uses this same mode'
+      : `Set ${label}`;
+    return `<button type="button" class="mode-chip ${isModeActive(mode, activeMode) ? 'active' : ''}" data-flight-mode="${mode}" title="${title}">${label}</button>`;
+  }).join('');
+}
+
+async function changeFlightMode(uavId, mode) {
+  const result = await setFlightMode(uavId, mode);
+  if (!result.success) alert(`${mode} mode failed for ${uavId}: ${result.message}`);
+}
+
+function renderFlightWarnings(elementId, warnings = []) {
+  const element = document.getElementById(elementId);
+  element.innerHTML = (warnings ?? []).map((warning) =>
+    `<div class="flight-warning">${escapeHtml(warning)}</div>`,
+  ).join('');
 }

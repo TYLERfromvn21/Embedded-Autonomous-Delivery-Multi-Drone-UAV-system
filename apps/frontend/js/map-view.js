@@ -1,5 +1,5 @@
-import { state, onStateUpdate } from './state.js';
-import { estimateRouteConflicts, COLLISION_MODEL } from './collision-check.js';
+﻿import { state, onStateUpdate } from './state.js?v=20261015-7';
+import { estimateRouteConflicts, COLLISION_MODEL } from './collision-check.js?v=20261015-7';
 import {
   uploadMission,
   startMission,
@@ -8,7 +8,8 @@ import {
   callAction,
   changeAltitude,
   changeSpeed,
-} from './api.js';
+  setFlightMode,
+} from './api.js?v=20261015-7';
 
 const HCMUT_CENTER = [10.7721, 106.6578];
 const DEFAULT_ALTITUDE_M = 5;
@@ -16,11 +17,11 @@ const DEFAULT_SPEED_M_S = 5;
 const FLIGHT_SETTINGS_KEY = 'uav-web-gcs.flight-settings.v1';
 const ARDUCOPTER_MODES = [
   'STABILIZE', 'ACRO', 'ALT_HOLD', 'AUTO', 'GUIDED', 'LOITER', 'RTL', 'CIRCLE',
-  'LAND', 'DRIFT', 'SPORT', 'FLIP', 'AUTOTUNE', 'POSHOLD', 'BRAKE', 'THROW',
-  'AVOID_ADSB', 'GUIDED_NOGPS', 'SMART_RTL', 'FLOWHOLD', 'FOLLOW', 'ZIGZAG',
-  'SYSTEMID', 'AUTOROTATE', 'TURTLE', 'QSTABILIZE', 'QHOVER', 'QLOITER',
-  'QLAND', 'QRTL', 'QAUTOTUNE', 'QACRO',
+  'LAND', 'DRIFT', 'SPORT', 'FLIP', 'AUTOTUNE', 'POSHOLD', 'THROW', 'AVOID_ADSB',
+  'GUIDED_NOGPS', 'SMART_RTL', 'FLOWHOLD', 'FOLLOW', 'ZIGZAG', 'SYSTEMID',
+  'AUTOROTATE', 'AUTO_RTL', 'TURTLE',
 ];
+const PX4_MODE_COMMANDS = ['HOLD', 'RTL', 'LAND'];
 const ROUTE_COLORS = ['#2dd4bf', '#f5a524', '#8b8df7', '#f477a8', '#56a8ff', '#a3d977'];
 const CLIMB_THRESHOLD_M_S = 0.2;
 
@@ -82,15 +83,96 @@ function escapeHtml(value) {
 
 export function initMap() {
   loadFlightSettings();
+  onStateUpdate(handleUpdate);
+  wireButtons();
+
+  const mapStatus = document.getElementById('map-status');
+  mapStatus.textContent = 'Loading map… live UAV data is available while the map loads.';
+
+  loadLeafletAssets()
+    .then(() => initializeLeafletMap(mapStatus))
+    .catch(() => {
+      mapStatus.hidden = false;
+      mapStatus.textContent = 'Map library unavailable. Live UAV data remains active.';
+    });
+}
+
+function loadLeafletAssets() {
+  if (window.L) return Promise.resolve();
+  if (window.leafletLoadPromise) return window.leafletLoadPromise;
+
+  for (const href of [
+    'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css',
+    'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+  ]) {
+    const stylesheet = document.createElement('link');
+    stylesheet.rel = 'stylesheet';
+    stylesheet.href = href;
+    document.head.append(stylesheet);
+  }
+
+  window.leafletLoadPromise = new Promise((resolve, reject) => {
+    const sources = [
+      'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
+      'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+    ];
+    const loadSource = (index) => {
+      if (index === sources.length) {
+        reject(new Error('Leaflet CDN unavailable'));
+        return;
+      }
+      const script = document.createElement('script');
+      const timeout = setTimeout(() => {
+        script.remove();
+        loadSource(index + 1);
+      }, 7000);
+      script.async = true;
+      script.src = sources[index];
+      script.onload = () => {
+        clearTimeout(timeout);
+        if (window.L) resolve();
+        else loadSource(index + 1);
+      };
+      script.onerror = () => {
+        clearTimeout(timeout);
+        loadSource(index + 1);
+      };
+      document.head.append(script);
+    };
+    loadSource(0);
+  });
+  return window.leafletLoadPromise;
+}
+
+function initializeLeafletMap(mapStatus) {
+  if (!window.L || map) {
+    if (!window.L) {
+    mapStatus.hidden = false;
+      mapStatus.textContent = 'Leaflet failed to load. Live UAV data remains available.';
+    }
+    return;
+  }
   map = L.map('map', { zoomControl: true }).setView(HCMUT_CENTER, 16);
   L.marker(HCMUT_CENTER)
     .addTo(map)
     .bindPopup('Ho Chi Minh City University of Technology (HCMUT)');
 
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+  const tiles = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
     attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012',
     maxZoom: 20,
-  }).addTo(map);
+  });
+  let tileLoaded = false;
+  tiles.on('tileload', () => {
+    tileLoaded = true;
+    mapStatus.hidden = true;
+  });
+  tiles.on('tileerror', () => {
+    if (!tileLoaded) {
+      mapStatus.hidden = false;
+      mapStatus.textContent = 'Map tiles unavailable. Live UAV data remains active.';
+    }
+  });
+  tiles.addTo(map);
   routeLayers = L.layerGroup().addTo(map);
   stationLayers = L.layerGroup().addTo(map);
 
@@ -112,8 +194,7 @@ export function initMap() {
     renderMissionPlanning();
   });
 
-  onStateUpdate(handleUpdate);
-  wireButtons();
+  handleUpdate(state.vehicles);
 }
 
 function uavIcon(heading, connected) {
@@ -132,14 +213,18 @@ function uavIcon(heading, connected) {
 function handleUpdate(vehicles) {
   renderUavList(vehicles);
   renderTelemetry(vehicles);
+  if (!map || !window.L) {
+    renderMissionPlanning();
+    return;
+  }
   renderVehiclePositions(vehicles);
   renderMissionPlanning();
   maybeAutoFit(vehicles);
 }
 
 function maybeAutoFit(vehicles) {
-  if (hasAutoFitted) return;
-  const withFix = vehicles.filter((vehicle) => vehicle.lat != null && vehicle.lon != null);
+  if (!map || !window.L || hasAutoFitted) return;
+  const withFix = vehicles.filter(hasValidGpsPosition);
   if (withFix.length === 0) return;
   const bounds = L.latLngBounds(withFix.map((vehicle) => [vehicle.lat, vehicle.lon]));
   map.fitBounds(bounds, { padding: [60, 60], maxZoom: 17 });
@@ -173,7 +258,12 @@ function renderTelemetry(vehicles) {
   const vehicle = vehicles.find((item) => item.uav_id === state.activeUav);
   if (!vehicle) return;
   document.getElementById('t-connected').innerText = vehicle.connected ? 'Connected' : 'Disconnected';
+  document.getElementById('t-autopilot').innerText = vehicle.autopilot ?? 'Waiting for heartbeat';
   document.getElementById('t-mode').innerText = vehicle.flight_mode ?? '-';
+  document.getElementById('t-ground-speed').innerText = Number.isFinite(vehicle.ground_speed_m_s)
+    ? `${vehicle.ground_speed_m_s.toFixed(1)} m/s`
+    : '-';
+  renderFlightWarnings('flight-warnings', vehicle.flight_warnings);
   document.getElementById('t-armed').innerText = vehicle.armed ? 'ARMED' : 'DISARMED';
   document.getElementById('t-battery').innerText = vehicle.battery_percent ?? '-';
   document.getElementById('t-alt').innerText = vehicle.alt != null ? vehicle.alt.toFixed(1) : '-';
@@ -181,6 +271,7 @@ function renderTelemetry(vehicles) {
   document.getElementById('t-latlon').innerText = vehicle.lat != null && vehicle.lon != null
     ? `${vehicle.lat.toFixed(5)}, ${vehicle.lon.toFixed(5)}`
     : '-';
+  document.getElementById('t-gps-fix').innerText = formatGpsFix(vehicle);
   const settings = settingsFor(vehicle.uav_id);
   const altitudeInput = document.getElementById('target-altitude');
   const speedInput = document.getElementById('target-speed');
@@ -221,15 +312,17 @@ function renderTelemetry(vehicles) {
     ? 'Vertical speed: waiting for telemetry'
     : `Vertical speed: ${verticalSpeed >= 0 ? '+' : ''}${verticalSpeed.toFixed(2)} m/s`;
 
-  const activeMode = String(vehicle.flight_mode ?? '').toUpperCase().split('.').pop();
-  document.getElementById('flight-modes').innerHTML = ARDUCOPTER_MODES.map((mode) =>
-    `<span class="mode-chip ${mode === activeMode ? 'active' : ''}">${mode}</span>`,
-  ).join('');
+  renderModeCommands('flight-modes', vehicle);
 }
 
 function renderVehiclePositions(vehicles) {
+  if (!map || !window.L) return;
   vehicles.forEach((vehicle) => {
-    if (vehicle.lat == null || vehicle.lon == null) return;
+    if (!hasValidGpsPosition(vehicle)) {
+      vehicleMarkers[vehicle.uav_id]?.remove();
+      delete vehicleMarkers[vehicle.uav_id];
+      return;
+    }
     const icon = uavIcon(vehicle.heading, vehicle.connected);
     if (!vehicleMarkers[vehicle.uav_id]) {
       vehicleMarkers[vehicle.uav_id] = L.marker([vehicle.lat, vehicle.lon], { icon, title: vehicle.uav_id })
@@ -239,6 +332,22 @@ function renderVehiclePositions(vehicles) {
       vehicleMarkers[vehicle.uav_id].setIcon(icon);
     }
   });
+}
+
+function hasValidGpsPosition(vehicle) {
+  return Number.isFinite(vehicle.lat)
+    && Number.isFinite(vehicle.lon)
+    && vehicle.lat >= -90 && vehicle.lat <= 90
+    && vehicle.lon >= -180 && vehicle.lon <= 180
+    && (vehicle.lat !== 0 || vehicle.lon !== 0);
+}
+
+function formatGpsFix(vehicle) {
+  const labels = ['No GPS', 'No fix', '2D fix', '3D fix', 'DGPS', 'RTK float', 'RTK fixed'];
+  const fixType = Number.isInteger(vehicle.gps_fix_type) ? vehicle.gps_fix_type : null;
+  if (fixType == null) return vehicle.lat != null ? 'Position available' : 'Waiting for GPS';
+  const label = labels[fixType] ?? `Fix type ${fixType}`;
+  return vehicle.gps_satellites == null ? label : `${label} (${vehicle.gps_satellites} sats)`;
 }
 
 function routeWaypoints(vehicle) {
@@ -533,12 +642,16 @@ function wireButtons() {
     else alert(result.message);
   });
   document.getElementById('btn-auto-mission').addEventListener('click', startSelectedMission);
+  document.getElementById('flight-modes').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-flight-mode]');
+    if (button && state.activeUav) changeFlightMode(state.activeUav, button.dataset.flightMode);
+  });
   document.getElementById('btn-loiter').addEventListener('click', async () => {
     if (!state.activeUav) {
       alert('Select a UAV first.');
       return;
     }
-    const result = await callAction(state.activeUav, 'hold');
+    const result = await setFlightMode(state.activeUav, 'LOITER');
     if (!result.success) alert(`Loiter command failed: ${result.message}`);
   });
   document.getElementById('btn-pause-mission').addEventListener('click', async () => {
@@ -623,4 +736,48 @@ async function startSelectedMission() {
   }
   const result = await startMission(state.activeUav);
   if (!result.success) alert(`Mission start failed: ${result.message}`);
+}
+
+function isModeActive(mode, activeMode) {
+  if (mode === 'AUTO' && activeMode === 'MISSION') return true;
+  if (mode === 'STABILIZE' && activeMode === 'STABILIZED') return true;
+  if (mode === 'ALT_HOLD' && activeMode === 'HOLD') return true;
+  return mode === activeMode;
+}
+
+function renderModeCommands(elementId, vehicle) {
+  const element = document.getElementById(elementId);
+  const modes = vehicle.autopilot === 'PX4'
+    ? PX4_MODE_COMMANDS
+    : vehicle.autopilot === 'ArduPilot'
+      ? ARDUCOPTER_MODES
+      : [];
+  if (!modes.length) {
+    element.innerHTML = '<span class="mode-hint">Waiting for autopilot heartbeat</span>';
+    return;
+  }
+  const activeMode = String(vehicle.flight_mode ?? '').toUpperCase().split('.').pop();
+  element.innerHTML = modes.map((mode) => {
+    const label = vehicle.autopilot === 'ArduPilot' && mode === 'ALT_HOLD'
+      ? 'HOLD'
+      : vehicle.autopilot === 'PX4' && mode === 'HOLD'
+        ? 'HOLD / LOITER'
+        : mode;
+    const title = vehicle.autopilot === 'PX4' && mode === 'HOLD'
+      ? 'PX4 Hold is the position-hold action; the Loiter button uses this same mode'
+      : `Set ${label}`;
+    return `<button type="button" class="mode-chip ${isModeActive(mode, activeMode) ? 'active' : ''}" data-flight-mode="${mode}" title="${title}">${label}</button>`;
+  }).join('');
+}
+
+async function changeFlightMode(uavId, mode) {
+  const result = await setFlightMode(uavId, mode);
+  if (!result.success) alert(`${mode} mode failed for ${uavId}: ${result.message}`);
+}
+
+function renderFlightWarnings(elementId, warnings = []) {
+  const element = document.getElementById(elementId);
+  element.innerHTML = (warnings ?? []).map((warning) =>
+    `<div class="flight-warning">${escapeHtml(warning)}</div>`,
+  ).join('');
 }

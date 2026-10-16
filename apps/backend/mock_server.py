@@ -47,7 +47,7 @@ def compute_states():
         altitude = cfg["alt"] + 2 * math.sin(altitude_phase)
         cfg["battery"] = max(0, cfg["battery"] - 0.01)
         states.append({
-            "uav_id": uav_id, "lat": lat, "lon": lon, "alt": altitude,
+            "uav_id": uav_id, "autopilot": "ArduPilot", "lat": lat, "lon": lon, "alt": altitude,
             "absolute_alt": altitude + 30, "heading": heading,
             "pitch_deg": 7 * math.cos(altitude_phase), "roll_deg": 8 * math.cos(angle),
             "vertical_speed_m_s": 0.8 * math.cos(altitude_phase),
@@ -140,6 +140,15 @@ async def fake_pause_mission(uav_id: str):
     return ActionResponse(success=True, message=f"[MOCK] {uav_id} paused mission", latency_ms=9.4)
 
 
+@app.post("/vehicles/{uav_id}/mode/{mode}", response_model=ActionResponse)
+async def fake_set_flight_mode(uav_id: str, mode: str):
+    if uav_id not in fake_state:
+        return ActionResponse(success=False, message=f"Unknown UAV: {uav_id}")
+    normalized = mode.upper().replace("-", "_")
+    fake_state[uav_id]["mode"] = "BRAKE" if normalized == "HOLD" else normalized
+    return ActionResponse(success=True, message=f"[MOCK] {uav_id} mode set to {fake_state[uav_id]['mode']}", latency_ms=12.3)
+
+
 @app.post("/vehicles/{uav_id}/{action}", response_model=ActionResponse)
 async def fake_action(uav_id: str, action: str):
     if uav_id not in fake_state:
@@ -149,7 +158,7 @@ async def fake_action(uav_id: str, action: str):
     if action == "disarm":
         fake_state[uav_id]["armed"] = False
     if action == "hold":
-        fake_state[uav_id]["mode"] = "LOITER"
+        fake_state[uav_id]["mode"] = "BRAKE"
     if action == "rtl":
         fake_state[uav_id]["mode"] = "RTL"
     return ActionResponse(success=True, message=f"[MOCK] {action} for {uav_id}", latency_ms=12.3)

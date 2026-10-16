@@ -1,12 +1,19 @@
-// api.js — thin wrapper around the backend's REST endpoints.
+﻿// api.js â€” thin wrapper around the backend's REST endpoints.
 
-import { BACKEND_HTTP } from './state.js';
+import { BACKEND_HTTP } from './state.js?v=20261015-7';
 
 export async function callAction(uavId, action, params = {}) {
   const query = new URLSearchParams(params);
   const serializedParams = query.toString();
   const suffix = serializedParams ? `?${serializedParams}` : '';
   const res = await fetch(`${BACKEND_HTTP}/vehicles/${uavId}/${action}${suffix}`, { method: 'POST' });
+  return res.json();
+}
+
+export async function setFlightMode(uavId, mode) {
+  const res = await fetch(`${BACKEND_HTTP}/vehicles/${encodeURIComponent(uavId)}/mode/${encodeURIComponent(mode)}`, {
+    method: 'POST',
+  });
   return res.json();
 }
 

@@ -88,6 +88,10 @@ def register_routes(router: APIRouter, manager):
     async def hold(uav_id: str):
         return await _run_action(uav_id, "hold")
 
+    @router.post("/vehicles/{uav_id}/mode/{mode}", response_model=ActionResponse)
+    async def set_flight_mode(uav_id: str, mode: str):
+        return await _run_action(uav_id, "set_flight_mode", mode)
+
     # ---- Batch: send the same action to an arbitrary set of UAVs ----
     # This is what backs the Actions tab's "select N vehicles, pick a command" flow.
     # Commands run concurrently (asyncio.gather), not one-by-one, so sending

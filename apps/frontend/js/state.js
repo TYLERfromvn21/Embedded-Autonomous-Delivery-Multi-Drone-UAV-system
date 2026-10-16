@@ -2,6 +2,7 @@
 // Keeping this in one place means map-view.js, fleet-view.js and actions-view.js
 // all read the same data instead of each tab keeping its own stale copy.
 
+// Keep localhost for Windows browser -> WSL localhost port forwarding.
 export const BACKEND_HTTP = "http://localhost:8000";
 export const BACKEND_WS = "ws://localhost:8000/ws/telemetry";
 
@@ -18,6 +19,13 @@ export function onStateUpdate(fn) {
 }
 
 export function setVehicles(vehicles) {
+  if (!Array.isArray(vehicles)) return;
   state.vehicles = vehicles;
-  state.listeners.forEach((fn) => fn(vehicles));
+  state.listeners.forEach((fn) => {
+    try {
+      fn(vehicles);
+    } catch (error) {
+      console.error('Frontend view failed to render vehicle data:', error);
+    }
+  });
 }

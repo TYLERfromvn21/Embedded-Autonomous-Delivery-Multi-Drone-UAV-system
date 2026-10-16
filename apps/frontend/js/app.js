@@ -1,11 +1,11 @@
-// app.js — entry point: wires up tab switching and initializes every view.
+﻿// app.js â€” entry point: wires up tab switching and initializes every view.
 
-import { connectWebSocket } from './ws-client.js';
-import { initMap } from './map-view.js';
-import { initFleetView } from './fleet-view.js';
-import { initActionsView } from './actions-view.js';
-import { initStationsView } from './station-view.js';
-import { state, onStateUpdate } from './state.js';
+import { connectWebSocket } from './ws-client.js?v=20261015-9';
+import { initMap } from './map-view.js?v=20261015-10';
+import { initFleetView } from './fleet-view.js?v=20261015-9';
+import { initActionsView } from './actions-view.js?v=20261015-10';
+import { initStationsView } from './station-view.js?v=20261015-7';
+import { onStateUpdate } from './state.js?v=20261015-7';
 
 function initTabs() {
   document.querySelectorAll('.tab-btn').forEach((btn) => {
@@ -33,8 +33,8 @@ function initFleetSummary() {
 
 initTabs();
 initFleetSummary();
-initMap();
 initFleetView();
 initActionsView();
 initStationsView();
 connectWebSocket();
+initMap();

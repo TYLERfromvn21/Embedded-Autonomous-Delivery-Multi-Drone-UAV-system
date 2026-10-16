@@ -1,7 +1,7 @@
-// fleet-view.js — the Fleet tab: a table of every UAV with its position,
+﻿// fleet-view.js â€” the Fleet tab: a table of every UAV with its position,
 // camera link (if the vehicle exposes one) and current uploaded route.
 
-import { onStateUpdate } from './state.js';
+import { onStateUpdate } from './state.js?v=20261015-7';
 
 export function initFleetView() {
   onStateUpdate(render);
