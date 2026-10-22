@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from app.config import DEFAULT_TAKEOFF_ALTITUDE_M, DEFAULT_WAYPOINT_ALTITUDE_M
 
 class VehicleSequences:
     """Execute ordered actions and stop after the first failed step."""
@@ -28,11 +29,13 @@ class VehicleSequences:
 
                 elif action == "takeoff":
 
-                    elapsed = await self.takeoff(params.get("altitude_m", 10.0))
+                    elapsed = await self.takeoff(params.get("altitude_m", DEFAULT_TAKEOFF_ALTITUDE_M))
 
                 elif action == "goto":
 
-                    elapsed = await self.goto(params["lat"], params["lon"], params.get("alt", 10.0))
+                    elapsed = await self.goto(
+                        params["lat"], params["lon"], params.get("alt", DEFAULT_WAYPOINT_ALTITUDE_M)
+                    )
 
                 elif action == "land":
 

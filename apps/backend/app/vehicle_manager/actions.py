@@ -1,6 +1,7 @@
 """Flight actions exposed by a Vehicle."""
 
 import time
+from app.config import AUTOPILOT_STATUS_MAX_AGE_S, DEFAULT_TAKEOFF_ALTITUDE_M
 
 class VehicleActions:
     """MAVSDK action commands and command timing."""
@@ -28,11 +29,11 @@ class VehicleActions:
     def _with_autopilot_status(self, message: str) -> str:
         status = getattr(self, "_last_autopilot_status_text", None)
         received_at = getattr(self, "_last_autopilot_status_at", None)
-        if status and received_at and time.monotonic() - received_at <= 10:
+        if status and received_at and time.monotonic() - received_at <= AUTOPILOT_STATUS_MAX_AGE_S:
             return f"{message}; autopilot: {status}"
         return message
 
-    async def takeoff(self, altitude_m: float = 5.0):
+    async def takeoff(self, altitude_m: float = DEFAULT_TAKEOFF_ALTITUDE_M):
 
         # ArduCopter refuses takeoff while disarmed, but MAVSDK's generic error
 
@@ -53,6 +54,18 @@ class VehicleActions:
         await self.system.action.set_takeoff_altitude(altitude_m)
 
         return await self._timed(self.system.action.takeoff())
+
+    async def set_takeoff_altitude(self, altitude_m: float):
+        """Set and read back the takeoff-altitude target without arming."""
+        started = time.perf_counter()
+        await self.system.action.set_takeoff_altitude(altitude_m)
+        confirmed_altitude_m = await self.system.action.get_takeoff_altitude()
+        if abs(float(confirmed_altitude_m) - altitude_m) > 0.05:
+            raise RuntimeError(
+                f"Autopilot reports takeoff altitude {float(confirmed_altitude_m):.2f} m; "
+                f"requested {altitude_m:.2f} m"
+            )
+        return round((time.perf_counter() - started) * 1000, 1)
 
     async def land(self):
 

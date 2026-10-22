@@ -1,9 +1,7 @@
-﻿import { onStateUpdate } from './state.js?v=20261015-7';
-import { renderLandingStations } from './map-view.js?v=20261015-10';
+import { onStateUpdate } from './state.js?v=20261015-7';
+import { renderLandingStations } from './map-view.js?v=20261020-1';
 
-const STORAGE_KEY = 'uav-web-gcs.landing-stations.v1';
-const OCCUPANCY_RADIUS_M = 15;
-const LANDING_ALTITUDE_M = 10;
+import { COLLISION_CONFIG, LANDING_STATION_CONFIG } from './config.js?v=20261019-3';
 let stations = [];
 let latestVehicles = [];
 
@@ -25,12 +23,12 @@ function distanceMeters(first, second) {
     + Math.cos(radians(first.lat)) * Math.cos(radians(second.lat))
     * Math.sin(longitudeDelta / 2) ** 2;
   const boundedA = Math.max(0, Math.min(1, a));
-  return 6371000 * 2 * Math.atan2(Math.sqrt(boundedA), Math.sqrt(1 - boundedA));
+  return COLLISION_CONFIG.earthRadiusM * 2 * Math.atan2(Math.sqrt(boundedA), Math.sqrt(1 - boundedA));
 }
 
 function readStations() {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = localStorage.getItem(LANDING_STATION_CONFIG.storageKey);
     if (!saved) return [];
     const parsed = JSON.parse(saved);
     if (!Array.isArray(parsed)) throw new Error('Saved station data must be a list.');
@@ -51,7 +49,7 @@ function readStations() {
 
 function saveStations() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stations));
+    localStorage.setItem(LANDING_STATION_CONFIG.storageKey, JSON.stringify(stations));
     document.getElementById('station-message').textContent =
       'Station list saved in this browser. Hardware integration is not connected yet.';
     return true;
@@ -66,11 +64,11 @@ function occupantsFor(station, vehicles) {
   return vehicles.filter((vehicle) => {
     const inStationArea = vehicle.lat != null
       && vehicle.lon != null
-      && distanceMeters(station, vehicle) <= OCCUPANCY_RADIUS_M;
+      && distanceMeters(station, vehicle) <= LANDING_STATION_CONFIG.occupancyRadiusM;
     const landingMode = String(vehicle.flight_mode ?? '').toUpperCase().includes('LAND');
     return inStationArea && (
       vehicle.is_landed === true
-      || (landingMode && vehicle.alt != null && vehicle.alt <= LANDING_ALTITUDE_M)
+      || (landingMode && vehicle.alt != null && vehicle.alt <= LANDING_STATION_CONFIG.landingAltitudeM)
     );
   });
 }

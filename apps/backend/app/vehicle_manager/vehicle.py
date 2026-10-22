@@ -11,11 +11,13 @@ from mavsdk import System
 from app.config import (
     HORIZONTAL_SPEED_WARNING_M_S,
     TELEMETRY_TIMEOUT_S,
+    UAV_CAMERA_URLS,
     VERTICAL_DESCENT_WARNING_M_S,
 )
 from app.vehicle_manager.actions import VehicleActions
 from app.vehicle_manager.missions import VehicleMissions
 from app.vehicle_manager.modes import VehicleModes
+from app.vehicle_manager.parameters import VehicleParameters
 from app.vehicle_manager.sequences import VehicleSequences
 
 logger = logging.getLogger(__name__)
@@ -50,7 +52,7 @@ ARDUPILOT_MODE_NAMES = {
     28: "TURTLE",
 }
 
-class Vehicle(VehicleActions, VehicleMissions, VehicleModes, VehicleSequences):
+class Vehicle(VehicleActions, VehicleMissions, VehicleModes, VehicleParameters, VehicleSequences):
     """Wrap one MAVSDK System and cache its latest telemetry."""
 
     def __init__(self, uav_id: str, connection_url: str, mavsdk_port: int):
@@ -62,6 +64,9 @@ class Vehicle(VehicleActions, VehicleMissions, VehicleModes, VehicleSequences):
         self.system = System(port=mavsdk_port)
 
         self._mode_change_lock = asyncio.Lock()
+        self._mission_start_lock = asyncio.Lock()
+        self._auto_options_lock = asyncio.Lock()
+        self._mission_completion_task: asyncio.Task | None = None
 
         self.connected = False
 
@@ -118,7 +123,7 @@ class Vehicle(VehicleActions, VehicleMissions, VehicleModes, VehicleSequences):
 
             # Left as None until that integration is wired up.
 
-            "camera_url": None,
+            "camera_url": UAV_CAMERA_URLS.get(uav_id),
 
             # waypoints: the last mission plan uploaded to this vehicle, kept here
 

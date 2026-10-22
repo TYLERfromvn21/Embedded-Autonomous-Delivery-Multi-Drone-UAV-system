@@ -6,13 +6,14 @@ Mission (waypoint route) upload and start/pause endpoints.
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from app.config import DEFAULT_FLIGHT_SPEED_M_S, DEFAULT_WAYPOINT_ALTITUDE_M
 
 
 class Waypoint(BaseModel):
     lat: float
     lon: float
-    alt: float = 5.0
-    speed_m_s: float = 5.0
+    alt: float = DEFAULT_WAYPOINT_ALTITUDE_M
+    speed_m_s: float = DEFAULT_FLIGHT_SPEED_M_S
 
 
 class MissionRequest(BaseModel):
@@ -58,7 +59,11 @@ def register_routes(router: APIRouter, manager):
             raise HTTPException(status_code=404, detail=str(e))
         try:
             latency_ms = await vehicle.start_mission()
-            return ActionResponse(success=True, message=f"Mission started for {uav_id}", latency_ms=latency_ms)
+            return ActionResponse(
+                success=True,
+                message=f"{uav_id} armed and switched to AUTO; mission start accepted.",
+                latency_ms=latency_ms,
+            )
         except Exception as e:
             return ActionResponse(success=False, message=str(e))
 
@@ -71,6 +76,18 @@ def register_routes(router: APIRouter, manager):
         try:
             latency_ms = await vehicle.pause_mission()
             return ActionResponse(success=True, message=f"Mission paused for {uav_id}", latency_ms=latency_ms)
+        except Exception as e:
+            return ActionResponse(success=False, message=str(e))
+
+    @router.post("/vehicles/{uav_id}/mission/resume", response_model=ActionResponse)
+    async def resume_mission(uav_id: str):
+        try:
+            vehicle = manager.get(uav_id)
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        try:
+            latency_ms = await vehicle.resume_mission()
+            return ActionResponse(success=True, message=f"Mission resumed for {uav_id}", latency_ms=latency_ms)
         except Exception as e:
             return ActionResponse(success=False, message=str(e))
 

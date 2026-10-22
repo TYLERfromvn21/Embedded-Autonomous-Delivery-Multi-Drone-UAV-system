@@ -1,29 +1,18 @@
 ﻿import { state, onStateUpdate } from './state.js?v=20261015-7';
-import { estimateRouteConflicts, COLLISION_MODEL } from './collision-check.js?v=20261015-7';
+import { estimateRouteConflicts, COLLISION_MODEL } from './collision-check.js?v=20261019-2';
 import {
   uploadMission,
   startMission,
+  resumeMission,
   pauseMission,
   clearMission,
   callAction,
-  changeAltitude,
   changeSpeed,
   setFlightMode,
-} from './api.js?v=20261015-7';
+  setTakeoffAltitude,
+} from './api.js?v=20261020-1';
 
-const HCMUT_CENTER = [10.7721, 106.6578];
-const DEFAULT_ALTITUDE_M = 5;
-const DEFAULT_SPEED_M_S = 5;
-const FLIGHT_SETTINGS_KEY = 'uav-web-gcs.flight-settings.v1';
-const ARDUCOPTER_MODES = [
-  'STABILIZE', 'ACRO', 'ALT_HOLD', 'AUTO', 'GUIDED', 'LOITER', 'RTL', 'CIRCLE',
-  'LAND', 'DRIFT', 'SPORT', 'FLIP', 'AUTOTUNE', 'POSHOLD', 'THROW', 'AVOID_ADSB',
-  'GUIDED_NOGPS', 'SMART_RTL', 'FLOWHOLD', 'FOLLOW', 'ZIGZAG', 'SYSTEMID',
-  'AUTOROTATE', 'AUTO_RTL', 'TURTLE',
-];
-const PX4_MODE_COMMANDS = ['HOLD', 'RTL', 'LAND'];
-const ROUTE_COLORS = ['#2dd4bf', '#f5a524', '#8b8df7', '#f477a8', '#56a8ff', '#a3d977'];
-const CLIMB_THRESHOLD_M_S = 0.2;
+import { FLIGHT_CONFIG, FLIGHT_MODE_OPTIONS, LANDING_STATION_CONFIG, MAP_CONFIG, loadFlightSettings as loadSavedFlightSettings } from './config.js?v=20261019-3';
 
 let map;
 let vehicleMarkers = {};
@@ -37,8 +26,7 @@ let flightSettings = {};
 
 function loadFlightSettings() {
   try {
-    const saved = localStorage.getItem(FLIGHT_SETTINGS_KEY);
-    flightSettings = saved ? JSON.parse(saved) : {};
+    flightSettings = loadSavedFlightSettings();
     if (!flightSettings || Array.isArray(flightSettings) || typeof flightSettings !== 'object') {
       flightSettings = {};
     }
@@ -50,12 +38,16 @@ function loadFlightSettings() {
 function settingsFor(uavId) {
   const saved = flightSettings[uavId];
   const settings = {
-    altitudeM: Number.isFinite(saved?.altitudeM) && saved.altitudeM >= 1 && saved.altitudeM <= 120
+    altitudeM: Number.isFinite(saved?.altitudeM)
+      && saved.altitudeM >= FLIGHT_CONFIG.minimumAltitudeM
+      && saved.altitudeM <= FLIGHT_CONFIG.maximumAltitudeM
       ? saved.altitudeM
-      : DEFAULT_ALTITUDE_M,
-    speedMps: Number.isFinite(saved?.speedMps) && saved.speedMps >= 0.5 && saved.speedMps <= 30
+      : FLIGHT_CONFIG.defaultAltitudeM,
+    speedMps: Number.isFinite(saved?.speedMps)
+      && saved.speedMps >= FLIGHT_CONFIG.minimumSpeedMps
+      && saved.speedMps <= FLIGHT_CONFIG.maximumSpeedMps
       ? saved.speedMps
-      : DEFAULT_SPEED_M_S,
+      : FLIGHT_CONFIG.defaultSpeedMps,
   };
   flightSettings[uavId] = settings;
   return settings;
@@ -63,7 +55,7 @@ function settingsFor(uavId) {
 
 function saveFlightSettings() {
   try {
-    localStorage.setItem(FLIGHT_SETTINGS_KEY, JSON.stringify(flightSettings));
+    localStorage.setItem(FLIGHT_CONFIG.settingsStorageKey, JSON.stringify(flightSettings));
     return true;
   } catch (error) {
     alert(`Could not save flight settings in this browser: ${error.message}`);
@@ -83,6 +75,7 @@ function escapeHtml(value) {
 
 export function initMap() {
   loadFlightSettings();
+  configureFlightInputs();
   onStateUpdate(handleUpdate);
   wireButtons();
 
@@ -95,6 +88,20 @@ export function initMap() {
       mapStatus.hidden = false;
       mapStatus.textContent = 'Map library unavailable. Live UAV data remains active.';
     });
+}
+
+function configureFlightInputs() {
+  const altitude = document.getElementById('target-altitude');
+  altitude.min = FLIGHT_CONFIG.minimumAltitudeM;
+  altitude.max = FLIGHT_CONFIG.maximumAltitudeM;
+  altitude.step = FLIGHT_CONFIG.altitudeStepM;
+  altitude.value = FLIGHT_CONFIG.defaultAltitudeM;
+
+  const speed = document.getElementById('target-speed');
+  speed.min = FLIGHT_CONFIG.minimumSpeedMps;
+  speed.max = FLIGHT_CONFIG.maximumSpeedMps;
+  speed.step = FLIGHT_CONFIG.speedStepMps;
+  speed.value = FLIGHT_CONFIG.defaultSpeedMps;
 }
 
 function loadLeafletAssets() {
@@ -152,14 +159,14 @@ function initializeLeafletMap(mapStatus) {
     }
     return;
   }
-  map = L.map('map', { zoomControl: true }).setView(HCMUT_CENTER, 16);
-  L.marker(HCMUT_CENTER)
+  map = L.map('map', { zoomControl: true }).setView(MAP_CONFIG.initialCenter, MAP_CONFIG.initialZoom);
+  L.marker(MAP_CONFIG.initialCenter)
     .addTo(map)
     .bindPopup('Ho Chi Minh City University of Technology (HCMUT)');
 
-  const tiles = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012',
-    maxZoom: 20,
+  const tiles = L.tileLayer(MAP_CONFIG.tileUrl, {
+    attribution: MAP_CONFIG.tileAttribution,
+    maxZoom: MAP_CONFIG.maximumZoom,
   });
   let tileLoaded = false;
   tiles.on('tileload', () => {
@@ -295,10 +302,10 @@ function renderTelemetry(vehicles) {
   if (verticalSpeed == null) {
     trend = 'WAITING FOR FLIGHT DATA';
     trendClass = 'unknown';
-  } else if (verticalSpeed > CLIMB_THRESHOLD_M_S) {
+  } else if (verticalSpeed > FLIGHT_CONFIG.climbThresholdMps) {
     trend = 'CLIMBING';
     trendClass = 'climbing';
-  } else if (verticalSpeed < -CLIMB_THRESHOLD_M_S) {
+  } else if (verticalSpeed < -FLIGHT_CONFIG.climbThresholdMps) {
     trend = 'DESCENDING';
     trendClass = 'descending';
   } else if (vehicle.is_landed) {
@@ -358,7 +365,7 @@ function routePoints(waypoints) {
   return waypoints.map((waypoint) => ({
     lat: Number(waypoint.lat),
     lon: Number(waypoint.lon),
-    alt: Number(waypoint.alt ?? 10),
+    alt: Number(waypoint.alt ?? MAP_CONFIG.defaultWaypointAltitudeM),
   }));
 }
 
@@ -399,7 +406,7 @@ function renderMissionPlanning() {
 function renderRouteLayers() {
   routeLayers.clearLayers();
   state.vehicles.forEach((vehicle, index) => {
-    const color = ROUTE_COLORS[index % ROUTE_COLORS.length];
+    const color = MAP_CONFIG.routeColors[index % MAP_CONFIG.routeColors.length];
     const uploaded = routeWaypoints(vehicle);
     const draft = state.draftRoutes[vehicle.uav_id] ?? [];
     const routes = [];
@@ -418,7 +425,7 @@ function renderRouteLayers() {
         });
         const destination = route.waypoints[route.waypoints.length - 1];
         const waypointDetails = route.waypoints.map((point, waypointIndex) =>
-          `WP ${waypointIndex + 1}: ${point.lat.toFixed(5)}, ${point.lon.toFixed(5)} @ ${Number(point.alt ?? 10).toFixed(1)} m`,
+          `WP ${waypointIndex + 1}: ${point.lat.toFixed(5)}, ${point.lon.toFixed(5)} @ ${Number(point.alt ?? MAP_CONFIG.defaultWaypointAltitudeM).toFixed(1)} m`,
         ).join('<br>');
         line.bindPopup(
           `<strong>${escapeHtml(vehicle.uav_id)} — ${route.label} route</strong><br>`
@@ -439,7 +446,7 @@ function renderRouteLayers() {
         marker.bindPopup(
           `<strong>${escapeHtml(vehicle.uav_id)} ${route.label} — WP ${waypointIndex + 1}</strong><br>`
           + `Destination: ${waypoint.lat.toFixed(5)}, ${waypoint.lon.toFixed(5)}<br>`
-          + `Altitude: ${Number(waypoint.alt ?? 10).toFixed(1)} m`,
+          + `Altitude: ${Number(waypoint.alt ?? MAP_CONFIG.defaultWaypointAltitudeM).toFixed(1)} m`,
         );
         routeLayers.addLayer(marker);
       });
@@ -481,7 +488,7 @@ function renderRouteList() {
     const destination = waypoints[waypoints.length - 1];
     const routeType = draft.length ? 'Draft' : 'Uploaded';
     return `<button class="route-item ${state.activeUav === vehicle.uav_id ? 'active' : ''}" data-route-uav="${escapeHtml(vehicle.uav_id)}">
-      <span class="route-color" style="background:${ROUTE_COLORS[index % ROUTE_COLORS.length]}"></span>
+      <span class="route-color" style="background:${MAP_CONFIG.routeColors[index % MAP_CONFIG.routeColors.length]}"></span>
       <span><strong>${escapeHtml(vehicle.uav_id)} · ${routeType}</strong><small>${waypoints.length} waypoint(s) · destination ${destination.lat.toFixed(5)}, ${destination.lon.toFixed(5)}</small></span>
     </button>`;
   }).join('') || '<div class="hint">Uploaded and draft routes will appear here.</div>';
@@ -499,7 +506,7 @@ function renderRouteList() {
       if (destination) {
         L.popup()
           .setLatLng([destination.lat, destination.lon])
-          .setContent(`<strong>${escapeHtml(vehicle.uav_id)} destination</strong><br>${destination.lat.toFixed(5)}, ${destination.lon.toFixed(5)} @ ${Number(destination.alt ?? 10).toFixed(1)} m`)
+          .setContent(`<strong>${escapeHtml(vehicle.uav_id)} destination</strong><br>${destination.lat.toFixed(5)}, ${destination.lon.toFixed(5)} @ ${Number(destination.alt ?? MAP_CONFIG.defaultWaypointAltitudeM).toFixed(1)} m`)
           .openOn(map);
       }
     });
@@ -529,11 +536,11 @@ export function renderLandingStations(stations, vehicles = state.vehicles) {
     occupants: vehicles.filter((vehicle) =>
       vehicle.lat != null
       && vehicle.lon != null
-      && map.distance([station.lat, station.lon], [vehicle.lat, vehicle.lon]) <= 15
+      && map.distance([station.lat, station.lon], [vehicle.lat, vehicle.lon]) <= LANDING_STATION_CONFIG.occupancyRadiusM
       && (vehicle.is_landed === true || (
         String(vehicle.flight_mode ?? '').toUpperCase().includes('LAND')
         && vehicle.alt != null
-        && vehicle.alt <= 10
+        && vehicle.alt <= LANDING_STATION_CONFIG.landingAltitudeM
       )),
     ).map((vehicle) => `${vehicle.uav_id}:${vehicle.is_landed ? 'landed' : 'landing'}`),
   })));
@@ -544,11 +551,11 @@ export function renderLandingStations(stations, vehicles = state.vehicles) {
     const occupants = vehicles.filter((vehicle) =>
       vehicle.lat != null
       && vehicle.lon != null
-      && map.distance([station.lat, station.lon], [vehicle.lat, vehicle.lon]) <= 15
+      && map.distance([station.lat, station.lon], [vehicle.lat, vehicle.lon]) <= LANDING_STATION_CONFIG.occupancyRadiusM
       && (vehicle.is_landed === true || (
         String(vehicle.flight_mode ?? '').toUpperCase().includes('LAND')
         && vehicle.alt != null
-        && vehicle.alt <= 10
+        && vehicle.alt <= LANDING_STATION_CONFIG.landingAltitudeM
       )),
     );
     const occupancy = occupants.length
@@ -613,22 +620,41 @@ function wireButtons() {
       if (!result.success) alert(`Error: ${result.message}`);
     });
   });
-  document.getElementById('target-altitude').addEventListener('change', (event) => {
-    updateFlightSetting('altitudeM', Number(event.target.value), 1, 120);
-  });
   document.getElementById('target-speed').addEventListener('change', (event) => {
-    updateFlightSetting('speedMps', Number(event.target.value), 0.5, 30);
+    updateFlightSetting(
+      'speedMps', Number(event.target.value),
+      FLIGHT_CONFIG.minimumSpeedMps, FLIGHT_CONFIG.maximumSpeedMps,
+    );
   });
-  document.getElementById('btn-change-altitude').addEventListener('click', async () => {
+  document.getElementById('btn-save-takeoff-target').addEventListener('click', async () => {
     if (!state.activeUav) {
       alert('Select a UAV first.');
       return;
     }
-    const altitude = settingsFor(state.activeUav).altitudeM;
-    if (!confirm(`Command ${state.activeUav} to change altitude to ${altitude} m? The UAV must be armed and in GUIDED mode.`)) return;
-    const result = await changeAltitude(state.activeUav, altitude);
-    if (!result.success) alert(`Altitude change failed: ${result.message}`);
-    else alert(result.message);
+    const altitude = Number(document.getElementById('target-altitude').value);
+    if (!Number.isFinite(altitude)
+      || altitude < FLIGHT_CONFIG.minimumAltitudeM
+      || altitude > FLIGHT_CONFIG.maximumAltitudeM) {
+      alert(`Enter a takeoff target between ${FLIGHT_CONFIG.minimumAltitudeM} and ${FLIGHT_CONFIG.maximumAltitudeM} m.`);
+      renderTelemetry(state.vehicles);
+      return;
+    }
+    const status = document.getElementById('map-takeoff-target-status');
+    status.textContent = `Sending ${altitude} m takeoff target to ${state.activeUav}...`;
+    const result = await setTakeoffAltitude(state.activeUav, altitude);
+    if (!result.success) {
+      status.textContent = `Autopilot did not confirm ${altitude} m: ${result.message}`;
+      return;
+    }
+    const saved = updateFlightSetting(
+      'altitudeM', altitude,
+      FLIGHT_CONFIG.minimumAltitudeM, FLIGHT_CONFIG.maximumAltitudeM,
+    );
+    if (!saved) {
+      status.textContent = `Autopilot confirmed ${altitude} m for ${state.activeUav}, but the browser could not save it.`;
+      return;
+    }
+    status.textContent = result.message || `Autopilot confirmed takeoff target: ${altitude} m for ${state.activeUav}.`;
   });
   document.getElementById('btn-change-speed').addEventListener('click', async () => {
     if (!state.activeUav) {
@@ -662,7 +688,7 @@ function wireButtons() {
     const result = await pauseMission(state.activeUav);
     if (!result.success) alert(`Pause mission failed: ${result.message}`);
   });
-  document.getElementById('btn-resume-mission').addEventListener('click', startSelectedMission);
+  document.getElementById('btn-resume-mission').addEventListener('click', resumeSelectedMission);
   document.getElementById('btn-abort-landing').addEventListener('click', async () => {
     if (!state.activeUav) {
       alert('Select a UAV first.');
@@ -726,7 +752,11 @@ function updateFlightSetting(key, value, min, max) {
   const settings = settingsFor(state.activeUav);
   const previous = settings[key];
   settings[key] = value;
-  if (!saveFlightSettings()) settings[key] = previous;
+  if (!saveFlightSettings()) {
+    settings[key] = previous;
+    return false;
+  }
+  return true;
 }
 
 async function startSelectedMission() {
@@ -736,6 +766,17 @@ async function startSelectedMission() {
   }
   const result = await startMission(state.activeUav);
   if (!result.success) alert(`Mission start failed: ${result.message}`);
+  else alert(result.message);
+}
+
+async function resumeSelectedMission() {
+  if (!state.activeUav) {
+    alert('Select a UAV first.');
+    return;
+  }
+  const result = await resumeMission(state.activeUav);
+  if (!result.success) alert(`Mission resume failed: ${result.message}`);
+  else alert(result.message);
 }
 
 function isModeActive(mode, activeMode) {
@@ -748,9 +789,9 @@ function isModeActive(mode, activeMode) {
 function renderModeCommands(elementId, vehicle) {
   const element = document.getElementById(elementId);
   const modes = vehicle.autopilot === 'PX4'
-    ? PX4_MODE_COMMANDS
+    ? FLIGHT_MODE_OPTIONS.px4
     : vehicle.autopilot === 'ArduPilot'
-      ? ARDUCOPTER_MODES
+      ? FLIGHT_MODE_OPTIONS.arducopter
       : [];
   if (!modes.length) {
     element.innerHTML = '<span class="mode-hint">Waiting for autopilot heartbeat</span>';

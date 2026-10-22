@@ -93,6 +93,7 @@ Then run the frontend using the static server command above. Do not run the mock
 - Telemetry WebSocket: `ws://localhost:8000/ws/telemetry`
 - UAV endpoints and server host/port are configured in `apps/backend/app/config.py`.
 - `UAV1_URL`, `UAV2_URL`, and `UAV3_URL` environment variables override the configured connection URLs.
+- Set `UAV1_CAMERA_URL` (and `UAV2_CAMERA_URL`, etc.) to a browser-accessible camera URL to show a UAV feed in the Video tab. MJPEG streams use an HTTP URL such as `http://192.168.4.2:8080/video`; MP4/WebM URLs use the built-in video player. RTSP streams need a gateway that converts them to a browser-compatible format.
 - For serial hardware, use a MAVSDK serial URL such as `serial:///dev/ttyUSB0:57600` and ensure the device and baud rate match your flight controller.
 
 ## Documentation

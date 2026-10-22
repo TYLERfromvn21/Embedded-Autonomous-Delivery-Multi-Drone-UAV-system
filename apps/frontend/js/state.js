@@ -2,10 +2,6 @@
 // Keeping this in one place means map-view.js, fleet-view.js and actions-view.js
 // all read the same data instead of each tab keeping its own stale copy.
 
-// Keep localhost for Windows browser -> WSL localhost port forwarding.
-export const BACKEND_HTTP = "http://localhost:8000";
-export const BACKEND_WS = "ws://localhost:8000/ws/telemetry";
-
 export const state = {
   vehicles: [],       // latest fleet snapshot from the WebSocket
   activeUav: null,     // uav_id selected in the Map tab's sidebar

@@ -198,6 +198,23 @@ body {
 }
 .flight-target-controls input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
 .flight-target-controls .act { padding: 7px 4px; font-size: 10px; }
+.flight-setting-note { grid-column: 1 / -1; color: var(--text-muted); font-size: 10px; line-height: 1.45; }
+#auto-options-panel h3,
+#auto-options-panel .telemetry-row,
+#auto-options-panel .flight-setting-note { grid-column: 1 / -1; }
+#auto-options-panel .action-grid { grid-column: 1 / -1; }
+#auto-options-panel .auto-option-control {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 68px;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 12px;
+}
+#auto-options-panel .auto-option-control input { width: 68px; text-align: center; }
+#auto-options-panel .auto-option-control small { grid-column: 1 / -1; color: var(--text-muted); font-size: 10px; }
+#auto-options-status.is-error { color: var(--danger, #ff6b6b); }
+.map-takeoff-note { padding: 1px 2px 3px; }
 
 .flight-status {
   display: flex;
@@ -440,6 +457,60 @@ table.fleet-table tr:hover td { background: var(--bg-1); }
 .station-detail .available { color: var(--accent); }
 .station-detail .station-pending { color: var(--text-muted); font-family: var(--font-ui); }
 
+/* ---- Video tab ---- */
+#video-view { min-width: 0; background: #0b0e12; }
+.video-sidebar {
+  width: 280px;
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 12px;
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+.video-sidebar-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 2px 4px 14px; }
+.video-sidebar-heading h2 { font-size: 15px; font-weight: 500; }
+.video-count { color: var(--text-muted); font: 10px var(--font-mono); white-space: nowrap; }
+.video-uav-list { display: flex; flex-direction: column; gap: 7px; }
+.video-uav-item {
+  width: 100%; min-height: 66px; display: flex; align-items: center; gap: 11px;
+  padding: 10px 11px; text-align: left; color: var(--text-primary); background: var(--bg-0);
+  border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: border-color .15s, background .15s;
+}
+.video-uav-item:hover { border-color: var(--border-strong); background: var(--bg-2); }
+.video-uav-item.active { border-color: var(--accent); background: #172622; }
+.video-uav-indicator { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; background: var(--text-muted); }
+.video-uav-indicator.connected { background: var(--accent); box-shadow: 0 0 9px #2dd4bf55; }
+.video-uav-copy { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 5px; }
+.video-uav-copy strong { font-size: 13px; font-weight: 500; }
+.video-uav-copy small { color: var(--text-secondary); font-size: 10px; }
+.video-uav-arrow { color: var(--text-muted); font-size: 21px; line-height: 1; }
+.video-uav-item.active .video-uav-arrow { color: var(--accent); }
+.video-list-empty { padding: 12px 8px; color: var(--text-muted); font-size: 12px; }
+.video-sidebar-note { margin: auto 4px 0; padding-top: 18px; color: var(--text-muted); font-size: 11px; line-height: 1.55; }
+.video-stage { min-width: 0; min-height: 0; flex: 1; display: flex; flex-direction: column; padding: 18px 22px 14px; }
+.video-stage-header { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.video-stage-header h1 { font-size: 17px; font-weight: 500; }
+.video-stage-header p { margin-top: 4px; color: var(--text-muted); font-size: 11px; }
+.video-connection-badge { padding: 6px 10px; border: 1px solid var(--border); border-radius: 20px; color: var(--text-secondary); background: var(--bg-1); font-size: 10px; white-space: nowrap; }
+.video-connection-badge[data-state="connected"] { color: var(--accent); border-color: #1d5b51; background: #142823; }
+.video-connection-badge[data-state="offline"] { color: var(--text-muted); }
+.video-player-frame {
+  position: relative; width: 100%; flex: 1; min-height: 220px; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; background: #050608; border: 1px solid #252a32; border-radius: 10px;
+  box-shadow: 0 16px 48px #0005;
+}
+.video-empty-state { max-width: 420px; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px; text-align: center; }
+.video-empty-state[hidden] { display: none; }
+.video-empty-state strong { font-size: 14px; font-weight: 500; }
+.video-empty-state span { color: var(--text-secondary); font-size: 12px; line-height: 1.55; }
+.video-empty-icon { width: 48px; height: 48px; display: grid; place-items: center; margin-bottom: 4px; padding-left: 3px; color: var(--accent); background: #16322e; border: 1px solid #255d54; border-radius: 50%; font-size: 18px; }
+.uav-camera-image, .uav-camera-video { display: block; width: 100%; height: 100%; max-height: 100%; object-fit: contain; background: #050608; }
+.uav-camera-image[hidden], .uav-camera-video[hidden] { display: none; }
+.video-stage-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 2px 0; color: var(--text-muted); font-size: 10px; }
+.video-stage-footer #video-stream-label { color: var(--accent); font: 10px var(--font-mono); letter-spacing: .08em; }
+
 @media (max-width: 980px) {
   #sidebar { width: 260px; }
   #rightpanel { width: 250px; padding: 10px; }
@@ -447,6 +518,8 @@ table.fleet-table tr:hover td { background: var(--bg-1); }
   .actions-layout { grid-template-columns: minmax(300px, 0.85fr) minmax(340px, 1.15fr); gap: 12px; }
   .actions-panel, .action-detail-panel { padding: 13px; }
   .select-row { grid-template-columns: auto minmax(55px, 0.6fr) minmax(90px, 1fr) auto; gap: 7px; }
+  .video-sidebar { width: 230px; flex-basis: 230px; }
+  .video-stage { padding: 14px; }
 }
 
 @media (max-width: 720px) {
@@ -469,6 +542,15 @@ table.fleet-table tr:hover td { background: var(--bg-1); }
   #actions-view { padding: 10px; }
   .actions-layout { grid-template-columns: 1fr; }
   .command-grid { grid-template-columns: repeat(3, minmax(75px, 1fr)); }
+  #video-view { flex-direction: column; overflow-y: auto; }
+  .video-sidebar { width: 100%; flex: 0 0 auto; padding: 10px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .video-sidebar-heading { padding-bottom: 8px; }
+  .video-uav-list { flex-direction: row; overflow-x: auto; }
+  .video-uav-item { width: 190px; min-width: 190px; min-height: 54px; }
+  .video-sidebar-note { display: none; }
+  .video-stage { flex: 1; min-height: 0; padding: 10px; }
+  .video-player-frame { min-height: 180px; }
+  .video-stage-footer { align-items: flex-start; font-size: 9px; }
 }
 
 .flight-warnings:empty { display: none; }

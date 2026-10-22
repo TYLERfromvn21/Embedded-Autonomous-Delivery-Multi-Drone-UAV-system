@@ -6,32 +6,24 @@ import {
   changeSpeed,
   pauseMission,
   startMission,
+  resumeMission,
   setFlightMode,
-} from './api.js?v=20261015-7';
+  setTakeoffAltitude,
+  getAutoOptions,
+  setAutoOptions,
+} from './api.js?v=20261020-1';
 
-const FLIGHT_SETTINGS_KEY = 'uav-web-gcs.flight-settings.v1';
-const DEFAULT_ALTITUDE_M = 5;
-const DEFAULT_SPEED_M_S = 5;
-const CLIMB_THRESHOLD_M_S = 0.2;
-const ARDUCOPTER_MODES = [
-  'STABILIZE', 'ACRO', 'ALT_HOLD', 'AUTO', 'GUIDED', 'LOITER', 'RTL', 'CIRCLE',
-  'LAND', 'DRIFT', 'SPORT', 'FLIP', 'AUTOTUNE', 'POSHOLD', 'THROW', 'AVOID_ADSB',
-  'GUIDED_NOGPS', 'SMART_RTL', 'FLOWHOLD', 'FOLLOW', 'ZIGZAG', 'SYSTEMID',
-  'AUTOROTATE', 'AUTO_RTL', 'TURTLE',
-];
-const PX4_MODE_COMMANDS = ['HOLD', 'RTL', 'LAND'];
+import { FLIGHT_CONFIG, FLIGHT_MODE_OPTIONS, loadFlightSettings } from './config.js?v=20261019-3';
 
 let selectedUavId = null;
 let vehicles = [];
 let renderedUavIds = '';
+let autoOptionsCache = new Map();
+let autoOptionsLoading = new Set();
+let renderedAutoOptionsUavId = null;
 
 function readFlightSettings() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(FLIGHT_SETTINGS_KEY) ?? '{}');
-    return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
-  } catch {
-    return {};
-  }
+  return loadFlightSettings();
 }
 
 function settingsFor(uavId) {
@@ -39,12 +31,16 @@ function settingsFor(uavId) {
   const saved = allSettings[uavId] ?? {};
   return {
     allSettings,
-    altitudeM: Number.isFinite(saved.altitudeM) && saved.altitudeM >= 1 && saved.altitudeM <= 120
+    altitudeM: Number.isFinite(saved.altitudeM)
+      && saved.altitudeM >= FLIGHT_CONFIG.minimumAltitudeM
+      && saved.altitudeM <= FLIGHT_CONFIG.maximumAltitudeM
       ? saved.altitudeM
-      : DEFAULT_ALTITUDE_M,
-    speedMps: Number.isFinite(saved.speedMps) && saved.speedMps >= 0.5 && saved.speedMps <= 30
+      : FLIGHT_CONFIG.defaultAltitudeM,
+    speedMps: Number.isFinite(saved.speedMps)
+      && saved.speedMps >= FLIGHT_CONFIG.minimumSpeedMps
+      && saved.speedMps <= FLIGHT_CONFIG.maximumSpeedMps
       ? saved.speedMps
-      : DEFAULT_SPEED_M_S,
+      : FLIGHT_CONFIG.defaultSpeedMps,
   };
 }
 
@@ -61,7 +57,7 @@ function persistFlightSetting(uavId, key, value, min, max) {
     [key]: value,
   };
   try {
-    localStorage.setItem(FLIGHT_SETTINGS_KEY, JSON.stringify(settings.allSettings));
+    localStorage.setItem(FLIGHT_CONFIG.settingsStorageKey, JSON.stringify(settings.allSettings));
     return true;
   } catch (error) {
     alert(`Could not save flight settings: ${error.message}`);
@@ -71,6 +67,7 @@ function persistFlightSetting(uavId, key, value, min, max) {
 }
 
 export function initActionsView() {
+  configureFlightInputs();
   onStateUpdate((updatedVehicles) => {
     vehicles = updatedVehicles;
     if (!vehicles.some((vehicle) => vehicle.uav_id === selectedUavId)) {
@@ -110,18 +107,67 @@ export function initActionsView() {
   document.querySelectorAll('[data-detail-action]').forEach((button) => {
     button.addEventListener('click', () => runIndividual(button.dataset.detailAction));
   });
-  document.getElementById('action-target-altitude').addEventListener('change', (event) => {
-    if (selectedUavId) persistFlightSetting(selectedUavId, 'altitudeM', Number(event.target.value), 1, 120);
-  });
   document.getElementById('action-target-speed').addEventListener('change', (event) => {
-    if (selectedUavId) persistFlightSetting(selectedUavId, 'speedMps', Number(event.target.value), 0.5, 30);
+    if (selectedUavId) persistFlightSetting(
+      selectedUavId, 'speedMps', Number(event.target.value),
+      FLIGHT_CONFIG.minimumSpeedMps, FLIGHT_CONFIG.maximumSpeedMps,
+    );
   });
+  document.getElementById('action-save-takeoff-target').addEventListener('click', saveTakeoffTarget);
   document.getElementById('action-change-altitude').addEventListener('click', () => runTargetChange('altitude'));
   document.getElementById('action-change-speed').addEventListener('click', () => runTargetChange('speed'));
+  document.getElementById('auto-options-refresh').addEventListener('click', () => {
+    if (selectedUavId) loadAutoOptions(selectedUavId, true);
+  });
+  document.getElementById('auto-options-apply').addEventListener('click', applyAutoOptions);
   document.getElementById('action-flight-modes').addEventListener('click', (event) => {
     const button = event.target.closest('[data-flight-mode]');
     if (button && selectedUavId) changeFlightMode(selectedUavId, button.dataset.flightMode);
   });
+}
+
+function configureFlightInputs() {
+  const altitude = document.getElementById('action-target-altitude');
+  altitude.min = FLIGHT_CONFIG.minimumAltitudeM;
+  altitude.max = FLIGHT_CONFIG.maximumAltitudeM;
+  altitude.step = FLIGHT_CONFIG.altitudeStepM;
+  altitude.value = FLIGHT_CONFIG.defaultAltitudeM;
+
+  const speed = document.getElementById('action-target-speed');
+  speed.min = FLIGHT_CONFIG.minimumSpeedMps;
+  speed.max = FLIGHT_CONFIG.maximumSpeedMps;
+  speed.step = FLIGHT_CONFIG.speedStepMps;
+  speed.value = FLIGHT_CONFIG.defaultSpeedMps;
+}
+
+async function saveTakeoffTarget() {
+  if (!selectedUavId) {
+    alert('Select a UAV first.');
+    return;
+  }
+  const input = document.getElementById('action-target-altitude');
+  const altitude = Number(input.value);
+  if (!Number.isFinite(altitude)
+    || altitude < FLIGHT_CONFIG.minimumAltitudeM
+    || altitude > FLIGHT_CONFIG.maximumAltitudeM) {
+    alert(`Enter a takeoff target between ${FLIGHT_CONFIG.minimumAltitudeM} and ${FLIGHT_CONFIG.maximumAltitudeM} m.`);
+    return;
+  }
+  const status = document.getElementById('action-takeoff-target-status');
+  status.textContent = `Sending ${altitude} m takeoff target to ${selectedUavId}...`;
+  const result = await setTakeoffAltitude(selectedUavId, altitude);
+  if (!result.success) {
+    status.textContent = `Autopilot did not confirm ${altitude} m: ${result.message}`;
+    return;
+  }
+  if (!persistFlightSetting(
+    selectedUavId, 'altitudeM', altitude,
+    FLIGHT_CONFIG.minimumAltitudeM, FLIGHT_CONFIG.maximumAltitudeM,
+  )) {
+    status.textContent = `Autopilot confirmed ${altitude} m for ${selectedUavId}, but the browser could not save it.`;
+    return;
+  }
+  status.textContent = result.message || `Autopilot confirmed takeoff target: ${altitude} m for ${selectedUavId}.`;
 }
 
 function renderSelectList() {
@@ -213,20 +259,118 @@ function renderDetails() {
 
   let trend = 'HOLDING ALTITUDE';
   if (vehicle.vertical_speed_m_s == null) trend = 'WAITING FOR FLIGHT DATA';
-  else if (vehicle.vertical_speed_m_s > CLIMB_THRESHOLD_M_S) trend = 'CLIMBING';
-  else if (vehicle.vertical_speed_m_s < -CLIMB_THRESHOLD_M_S) trend = 'DESCENDING';
+  else if (vehicle.vertical_speed_m_s > FLIGHT_CONFIG.climbThresholdMps) trend = 'CLIMBING';
+  else if (vehicle.vertical_speed_m_s < -FLIGHT_CONFIG.climbThresholdMps) trend = 'DESCENDING';
   else if (vehicle.is_landed) trend = 'ON GROUND';
   const trendElement = document.getElementById('action-flight-trend');
   trendElement.textContent = trend;
   trendElement.className = vehicle.vertical_speed_m_s == null
     ? 'unknown'
-    : vehicle.vertical_speed_m_s > CLIMB_THRESHOLD_M_S
+    : vehicle.vertical_speed_m_s > FLIGHT_CONFIG.climbThresholdMps
       ? 'climbing'
-      : vehicle.vertical_speed_m_s < -CLIMB_THRESHOLD_M_S
+      : vehicle.vertical_speed_m_s < -FLIGHT_CONFIG.climbThresholdMps
         ? 'descending'
         : 'steady';
 
   renderModeCommands('action-flight-modes', vehicle);
+  renderAutoOptions(vehicle);
+}
+
+function renderAutoOptions(vehicle) {
+  const panel = document.getElementById('auto-options-panel');
+  panel.hidden = vehicle.autopilot !== 'ArduPilot';
+  if (panel.hidden) {
+    renderedAutoOptionsUavId = null;
+    return;
+  }
+
+  const cached = autoOptionsCache.get(vehicle.uav_id);
+  if (cached && !cached.success) {
+    if (renderedAutoOptionsUavId !== vehicle.uav_id) {
+      document.getElementById('auto-options-status').textContent =
+        `Could not read AUTO_OPTIONS: ${cached.message}`;
+      renderedAutoOptionsUavId = vehicle.uav_id;
+    }
+    return;
+  }
+  if (cached && renderedAutoOptionsUavId !== vehicle.uav_id) {
+    document.getElementById('auto-options-value').textContent = String(cached.value);
+    document.getElementById('auto-allow-arm-in-auto').value = cached.allow_arming_in_auto ? '1' : '0';
+    document.getElementById('auto-takeoff-without-throttle').value = cached.takeoff_without_throttle ? '1' : '0';
+    document.getElementById('auto-options-status').textContent = 'Values read from the autopilot.';
+    renderedAutoOptionsUavId = vehicle.uav_id;
+  }
+  if (!cached && !autoOptionsLoading.has(vehicle.uav_id)) loadAutoOptions(vehicle.uav_id);
+}
+
+async function loadAutoOptions(uavId, refresh = false) {
+  if (refresh) autoOptionsCache.delete(uavId);
+  if (!refresh && autoOptionsCache.has(uavId)) return;
+  if (autoOptionsLoading.has(uavId)) return;
+  autoOptionsLoading.add(uavId);
+  const status = document.getElementById('auto-options-status');
+  status.textContent = `Reading AUTO_OPTIONS from ${uavId}...`;
+  try {
+    const result = await getAutoOptions(uavId);
+    if (!result.success) {
+      autoOptionsCache.set(uavId, result);
+      renderedAutoOptionsUavId = uavId;
+      status.textContent = `Could not read AUTO_OPTIONS: ${result.message}`;
+      return;
+    }
+    autoOptionsCache.set(uavId, result);
+    if (selectedUavId === uavId) {
+      renderedAutoOptionsUavId = null;
+      const vehicle = vehicles.find((item) => item.uav_id === uavId);
+      if (vehicle) renderAutoOptions(vehicle);
+    }
+  } catch (error) {
+    autoOptionsCache.set(uavId, { success: false, message: error.message });
+    renderedAutoOptionsUavId = uavId;
+    status.textContent = `Could not read AUTO_OPTIONS: ${error.message}`;
+  } finally {
+    autoOptionsLoading.delete(uavId);
+  }
+}
+
+async function applyAutoOptions() {
+  const uavId = selectedUavId;
+  if (!uavId) return;
+  const button = document.getElementById('auto-options-apply');
+  const status = document.getElementById('auto-options-status');
+  const armInAutoInput = document.getElementById('auto-allow-arm-in-auto');
+  const takeoffInput = document.getElementById('auto-takeoff-without-throttle');
+  const armInAutoValue = armInAutoInput.value.trim();
+  const takeoffValue = takeoffInput.value.trim();
+  if (![armInAutoValue, takeoffValue].every((value) => value === '0' || value === '1')) {
+    status.textContent = 'Enter only 0 or 1 for each AUTO_OPTIONS bit. No changes were sent.';
+    status.classList.add('is-error');
+    return;
+  }
+  status.classList.remove('is-error');
+  button.disabled = true;
+  status.textContent = `Updating AUTO_OPTIONS on ${uavId}...`;
+  try {
+    const result = await setAutoOptions(uavId, {
+      allow_arming_in_auto: armInAutoValue === '1',
+      takeoff_without_throttle: takeoffValue === '1',
+    });
+    if (!result.success) {
+      status.textContent = `Autopilot did not confirm AUTO_OPTIONS: ${result.message}`;
+      status.classList.add('is-error');
+      return;
+    }
+    autoOptionsCache.set(uavId, result);
+    renderedAutoOptionsUavId = null;
+    document.getElementById('auto-options-value').textContent = String(result.value);
+    status.textContent = `${result.message}. Other AUTO_OPTIONS bits were preserved.`;
+    status.classList.remove('is-error');
+  } catch (error) {
+    status.textContent = `AUTO_OPTIONS update failed: ${error.message}`;
+    status.classList.add('is-error');
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function hasValidGpsPosition(vehicle) {
@@ -269,7 +413,8 @@ async function runIndividual(action) {
   if (action === 'abort' && !confirm(`Abort landing for ${vehicle.uav_id} by commanding Return to Launch (RTL)?`)) return;
   const settings = settingsFor(vehicle.uav_id);
   let result;
-  if (action === 'auto' || action === 'resume') result = await startMission(vehicle.uav_id);
+  if (action === 'auto') result = await startMission(vehicle.uav_id);
+  else if (action === 'resume') result = await resumeMission(vehicle.uav_id);
   else if (action === 'pause') result = await pauseMission(vehicle.uav_id);
   else if (action === 'loiter') result = await setFlightMode(vehicle.uav_id, 'LOITER');
   else {
@@ -315,9 +460,9 @@ function isModeActive(mode, activeMode) {
 function renderModeCommands(elementId, vehicle) {
   const element = document.getElementById(elementId);
   const modes = vehicle.autopilot === 'PX4'
-    ? PX4_MODE_COMMANDS
+    ? FLIGHT_MODE_OPTIONS.px4
     : vehicle.autopilot === 'ArduPilot'
-      ? ARDUCOPTER_MODES
+      ? FLIGHT_MODE_OPTIONS.arducopter
       : [];
   if (!modes.length) {
     element.innerHTML = '<span class="mode-hint">Waiting for autopilot heartbeat</span>';

@@ -7,6 +7,17 @@ REST endpoints for fleet status, single-vehicle actions, and batch actions
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+from app.config import (
+    DEFAULT_TAKEOFF_ALTITUDE_M,
+    MAX_ALTITUDE_M,
+    MAX_FLIGHT_SPEED_M_S,
+    MIN_ALTITUDE_M,
+    MIN_FLIGHT_SPEED_M_S,
+)
+from app.vehicle_manager.parameters import (
+    AUTO_OPTIONS_ALLOW_ARM_IN_AUTO,
+    AUTO_OPTIONS_TAKEOFF_WITHOUT_THROTTLE,
+)
 
 router = APIRouter()
 
@@ -36,10 +47,61 @@ class SpeedRequest(BaseModel):
     speed_m_s: float
 
 
+class AutoOptionsRequest(BaseModel):
+    allow_arming_in_auto: bool
+    takeoff_without_throttle: bool
+
+
+class AutoOptionsResponse(BaseModel):
+    success: bool
+    value: int | None = None
+    allow_arming_in_auto: bool | None = None
+    takeoff_without_throttle: bool | None = None
+    message: str = ""
+
+
 def register_routes(router: APIRouter, manager):
     @router.get("/vehicles")
     def list_vehicles():
         return manager.all_states()
+
+    @router.get("/vehicles/{uav_id}/parameters/auto-options", response_model=AutoOptionsResponse)
+    async def get_auto_options(uav_id: str):
+        try:
+            vehicle = manager.get(uav_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error))
+        try:
+            value = await vehicle.get_auto_options()
+            return AutoOptionsResponse(
+                success=True,
+                value=value,
+                allow_arming_in_auto=bool(value & AUTO_OPTIONS_ALLOW_ARM_IN_AUTO),
+                takeoff_without_throttle=bool(value & AUTO_OPTIONS_TAKEOFF_WITHOUT_THROTTLE),
+            )
+        except Exception as error:
+            return AutoOptionsResponse(success=False, message=str(error))
+
+    @router.put("/vehicles/{uav_id}/parameters/auto-options", response_model=AutoOptionsResponse)
+    async def update_auto_options(uav_id: str, request: AutoOptionsRequest):
+        try:
+            vehicle = manager.get(uav_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error))
+        try:
+            value = await vehicle.update_auto_options(
+                request.allow_arming_in_auto,
+                request.takeoff_without_throttle,
+            )
+            return AutoOptionsResponse(
+                success=True,
+                value=value,
+                allow_arming_in_auto=bool(value & AUTO_OPTIONS_ALLOW_ARM_IN_AUTO),
+                takeoff_without_throttle=bool(value & AUTO_OPTIONS_TAKEOFF_WITHOUT_THROTTLE),
+                message=f"Autopilot confirmed AUTO_OPTIONS = {value}",
+            )
+        except Exception as error:
+            return AutoOptionsResponse(success=False, message=str(error))
 
     async def _run_action(uav_id: str, action_name: str, *args) -> ActionResponse:
         try:
@@ -61,19 +123,44 @@ def register_routes(router: APIRouter, manager):
         return await _run_action(uav_id, "disarm")
 
     @router.post("/vehicles/{uav_id}/takeoff", response_model=ActionResponse)
-    async def takeoff(uav_id: str, altitude: float = Query(default=5.0, ge=1, le=120)):
+    async def takeoff(
+        uav_id: str,
+        altitude: float = Query(
+            default=DEFAULT_TAKEOFF_ALTITUDE_M,
+            ge=MIN_ALTITUDE_M,
+            le=MAX_ALTITUDE_M,
+        ),
+    ):
         return await _run_action(uav_id, "takeoff", altitude)
+
+    @router.post("/vehicles/{uav_id}/takeoff-altitude", response_model=ActionResponse)
+    async def set_takeoff_altitude(uav_id: str, request: AltitudeRequest):
+        if not MIN_ALTITUDE_M <= request.altitude_m <= MAX_ALTITUDE_M:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Takeoff altitude must be between {MIN_ALTITUDE_M:g} and {MAX_ALTITUDE_M:g} m",
+            )
+        response = await _run_action(uav_id, "set_takeoff_altitude", request.altitude_m)
+        if response.success:
+            response.message = f"Autopilot confirmed takeoff altitude {request.altitude_m:.2f} m for {uav_id}"
+        return response
 
     @router.post("/vehicles/{uav_id}/altitude", response_model=ActionResponse)
     async def change_altitude(uav_id: str, request: AltitudeRequest):
-        if not 1.0 <= request.altitude_m <= 120.0:
-            raise HTTPException(status_code=422, detail="Altitude must be between 1 and 120 m")
+        if not MIN_ALTITUDE_M <= request.altitude_m <= MAX_ALTITUDE_M:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Altitude must be between {MIN_ALTITUDE_M:g} and {MAX_ALTITUDE_M:g} m",
+            )
         return await _run_action(uav_id, "change_altitude", request.altitude_m)
 
     @router.post("/vehicles/{uav_id}/speed", response_model=ActionResponse)
     async def change_speed(uav_id: str, request: SpeedRequest):
-        if not 0.5 <= request.speed_m_s <= 30.0:
-            raise HTTPException(status_code=422, detail="Speed must be between 0.5 and 30 m/s")
+        if not MIN_FLIGHT_SPEED_M_S <= request.speed_m_s <= MAX_FLIGHT_SPEED_M_S:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Speed must be between {MIN_FLIGHT_SPEED_M_S:g} and {MAX_FLIGHT_SPEED_M_S:g} m/s",
+            )
         return await _run_action(uav_id, "change_speed", request.speed_m_s)
 
     @router.post("/vehicles/{uav_id}/land", response_model=ActionResponse)

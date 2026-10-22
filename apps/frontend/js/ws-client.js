@@ -1,6 +1,5 @@
-﻿// ws-client.js â€” opens the telemetry WebSocket and feeds updates into state.js.
-
-import { BACKEND_HTTP, BACKEND_WS, setVehicles } from './state.js?v=20261015-7';
+﻿import { BACKEND_HTTP, BACKEND_WS } from './config.js?v=20261019-3';
+import { setVehicles } from './state.js?v=20261015-7';
 
 let reconnectTimer;
 let pollTimer;
@@ -19,16 +18,16 @@ async function pollVehicles() {
     const response = await fetch(`${BACKEND_HTTP}/vehicles`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     setVehicles(await response.json());
-    setBackendStatus('Backend connected · REST fallback', 'connected');
+    setBackendStatus('Backend connected', 'connected');
   } catch (error) {
-    setBackendStatus('Backend unavailable · retrying', 'disconnected');
+    setBackendStatus('Backend unavailable - retrying', 'disconnected');
     console.debug('Vehicle status poll failed:', error);
   }
 }
 
 export function connectWebSocket() {
   clearTimeout(reconnectTimer);
-  setBackendStatus('Connecting to backend…', 'connecting');
+  setBackendStatus('Connecting to backend...', 'connecting');
   let ws;
   try {
     ws = new WebSocket(BACKEND_WS);
@@ -39,7 +38,7 @@ export function connectWebSocket() {
   }
   ws.onopen = () => {
     websocketOpen = true;
-    setBackendStatus('Backend connected · live telemetry', 'connected');
+    setBackendStatus('Backend connected', 'connected');
   };
   ws.onmessage = (event) => {
     try {
@@ -48,10 +47,10 @@ export function connectWebSocket() {
       console.error('Invalid telemetry message from backend:', error);
     }
   };
-  ws.onerror = () => setBackendStatus('Live telemetry unavailable · using REST fallback', 'warning');
+  ws.onerror = () => setBackendStatus('Backend unavailable - retrying', 'disconnected');
   ws.onclose = () => {
     websocketOpen = false;
-    setBackendStatus('WebSocket disconnected · trying REST fallback', 'warning');
+    setBackendStatus('Backend unavailable - retrying', 'disconnected');
     scheduleReconnect();
   };
   if (!pollTimer) pollTimer = setInterval(pollVehicles, 1000);

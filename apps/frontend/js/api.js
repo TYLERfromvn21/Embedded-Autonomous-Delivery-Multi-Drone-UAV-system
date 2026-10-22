@@ -1,6 +1,6 @@
-﻿// api.js â€” thin wrapper around the backend's REST endpoints.
+// api.js — thin wrapper around the backend's REST endpoints.
 
-import { BACKEND_HTTP } from './state.js?v=20261015-7';
+import { BACKEND_HTTP } from './config.js?v=20261019-3';
 
 export async function callAction(uavId, action, params = {}) {
   const query = new URLSearchParams(params);
@@ -19,6 +19,15 @@ export async function setFlightMode(uavId, mode) {
 
 export async function changeAltitude(uavId, altitude) {
   const res = await fetch(`${BACKEND_HTTP}/vehicles/${uavId}/altitude`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ altitude_m: altitude }),
+  });
+  return res.json();
+}
+
+export async function setTakeoffAltitude(uavId, altitude) {
+  const res = await fetch(`${BACKEND_HTTP}/vehicles/${encodeURIComponent(uavId)}/takeoff-altitude`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ altitude_m: altitude }),
@@ -65,5 +74,24 @@ export async function clearMission(uavId) {
 
 export async function startMission(uavId) {
   const res = await fetch(`${BACKEND_HTTP}/vehicles/${uavId}/mission/start`, { method: 'POST' });
+  return res.json();
+}
+
+export async function resumeMission(uavId) {
+  const res = await fetch(`${BACKEND_HTTP}/vehicles/${uavId}/mission/resume`, { method: 'POST' });
+  return res.json();
+}
+
+export async function getAutoOptions(uavId) {
+  const res = await fetch(`${BACKEND_HTTP}/vehicles/${encodeURIComponent(uavId)}/parameters/auto-options`);
+  return res.json();
+}
+
+export async function setAutoOptions(uavId, options) {
+  const res = await fetch(`${BACKEND_HTTP}/vehicles/${encodeURIComponent(uavId)}/parameters/auto-options`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options),
+  });
   return res.json();
 }

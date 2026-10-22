@@ -1,8 +1,7 @@
-const EARTH_RADIUS_M = 6371000;
-const HORIZONTAL_PROTECTION_M = 10;
-const VERTICAL_PROTECTION_M = 5;
-const HORIZONTAL_SIGMA_M = Math.sqrt(2 * (5 ** 2 + 3 ** 2 + 2 ** 2));
-const VERTICAL_SIGMA_M = Math.sqrt(2) * 2;
+import { COLLISION_CONFIG } from './config.js?v=20261019-3';
+
+const HORIZONTAL_SIGMA_M = Math.sqrt(2) * COLLISION_CONFIG.perVehicleHorizontalSigmaM;
+const VERTICAL_SIGMA_M = Math.sqrt(2) * COLLISION_CONFIG.perVehicleVerticalSigmaM;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -11,8 +10,8 @@ function clamp(value, min, max) {
 function project(point, reference) {
   const latitudeRadians = reference.lat * Math.PI / 180;
   return {
-    x: (point.lon - reference.lon) * Math.PI / 180 * EARTH_RADIUS_M * Math.cos(latitudeRadians),
-    y: (point.lat - reference.lat) * Math.PI / 180 * EARTH_RADIUS_M,
+    x: (point.lon - reference.lon) * Math.PI / 180 * COLLISION_CONFIG.earthRadiusM * Math.cos(latitudeRadians),
+    y: (point.lat - reference.lat) * Math.PI / 180 * COLLISION_CONFIG.earthRadiusM,
     alt: Number(point.alt) || 0,
   };
 }
@@ -137,12 +136,12 @@ export function estimateRouteConflicts(routes) {
           const horizontalProbability = radialCollisionProbability(
             horizontalDistance,
             HORIZONTAL_SIGMA_M,
-            HORIZONTAL_PROTECTION_M,
+            COLLISION_CONFIG.horizontalProtectionM,
           );
           const verticalProbability = verticalCollisionProbability(
             verticalDistance,
             VERTICAL_SIGMA_M,
-            VERTICAL_PROTECTION_M,
+            COLLISION_CONFIG.verticalProtectionM,
           );
           const probability = horizontalProbability * verticalProbability;
 
@@ -152,16 +151,16 @@ export function estimateRouteConflicts(routes) {
               horizontalDistance,
               verticalDistance,
               midpoint: {
-                lat: reference.lat + ((closest.first.y + closest.second.y) / 2) / EARTH_RADIUS_M * 180 / Math.PI,
+                lat: reference.lat + ((closest.first.y + closest.second.y) / 2) / COLLISION_CONFIG.earthRadiusM * 180 / Math.PI,
                 lon: reference.lon + ((closest.first.x + closest.second.x) / 2) /
-                  (EARTH_RADIUS_M * Math.cos(reference.lat * Math.PI / 180)) * 180 / Math.PI,
+                  (COLLISION_CONFIG.earthRadiusM * Math.cos(reference.lat * Math.PI / 180)) * 180 / Math.PI,
               },
             };
           }
         });
       });
 
-      if (highestRisk && highestRisk.probability >= 0.05) {
+      if (highestRisk && highestRisk.probability >= COLLISION_CONFIG.minimumDisplayedProbability) {
         conflicts.push({
           firstUav: firstRoute.uavId,
           secondUav: secondRoute.uavId,
@@ -174,8 +173,8 @@ export function estimateRouteConflicts(routes) {
 }
 
 export const COLLISION_MODEL = {
-  horizontalProtectionM: HORIZONTAL_PROTECTION_M,
-  verticalProtectionM: VERTICAL_PROTECTION_M,
-  perVehicleHorizontalSigmaM: Math.sqrt(5 ** 2 + 3 ** 2 + 2 ** 2),
-  perVehicleVerticalSigmaM: 2,
+  horizontalProtectionM: COLLISION_CONFIG.horizontalProtectionM,
+  verticalProtectionM: COLLISION_CONFIG.verticalProtectionM,
+  perVehicleHorizontalSigmaM: COLLISION_CONFIG.perVehicleHorizontalSigmaM,
+  perVehicleVerticalSigmaM: COLLISION_CONFIG.perVehicleVerticalSigmaM,
 };
