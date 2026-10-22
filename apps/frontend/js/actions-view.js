@@ -294,13 +294,20 @@ function renderAutoOptions(vehicle) {
     return;
   }
   if (cached && renderedAutoOptionsUavId !== vehicle.uav_id) {
-    document.getElementById('auto-options-value').textContent = String(cached.value);
-    document.getElementById('auto-allow-arm-in-auto').value = cached.allow_arming_in_auto ? '1' : '0';
-    document.getElementById('auto-takeoff-without-throttle').value = cached.takeoff_without_throttle ? '1' : '0';
+    renderAutoOptionsValue(cached);
     document.getElementById('auto-options-status').textContent = 'Values read from the autopilot.';
     renderedAutoOptionsUavId = vehicle.uav_id;
   }
   if (!cached && !autoOptionsLoading.has(vehicle.uav_id)) loadAutoOptions(vehicle.uav_id);
+}
+
+function renderAutoOptionsValue(options) {
+  document.getElementById('auto-options-value').textContent = String(options.value);
+  document.getElementById('auto-options-decoded').textContent =
+    `Decoded bits: bit 0 = ${options.allow_arming_in_auto ? '1 (arming in AUTO allowed)' : '0 (arming in AUTO disabled)'}; `
+    + `bit 1 = ${options.takeoff_without_throttle ? '1 (AUTO takeoff without raising throttle)' : '0 (normal throttle requirement)'}.`;
+  document.getElementById('auto-allow-arm-in-auto').value = options.allow_arming_in_auto ? '1' : '0';
+  document.getElementById('auto-takeoff-without-throttle').value = options.takeoff_without_throttle ? '1' : '0';
 }
 
 async function loadAutoOptions(uavId, refresh = false) {
@@ -362,7 +369,7 @@ async function applyAutoOptions() {
     }
     autoOptionsCache.set(uavId, result);
     renderedAutoOptionsUavId = null;
-    document.getElementById('auto-options-value').textContent = String(result.value);
+    renderAutoOptionsValue(result);
     status.textContent = `${result.message}. Other AUTO_OPTIONS bits were preserved.`;
     status.classList.remove('is-error');
   } catch (error) {

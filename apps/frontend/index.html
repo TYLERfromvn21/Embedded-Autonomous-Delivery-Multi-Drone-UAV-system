@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <title>UAV Web GCS</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<link rel="stylesheet" href="css/styles.css?v=20261022-1" />
+<link rel="stylesheet" href="css/styles.css?v=20261022-2" />
 </head>
 <body>
 
@@ -160,18 +160,22 @@
               The saved target is used by Takeoff. You can set it before arming.
             </div>
           </div>
-          <section id="auto-options-panel" class="flight-target-controls" hidden>
-            <h3>ArduCopter AUTO_OPTIONS</h3>
+          <section id="auto-options-panel" class="flight-target-controls auto-options-card" hidden>
+            <h3>AUTO_OPTIONS <span>ArduCopter parameter</span></h3>
+            <p class="auto-options-explanation">
+              This is one integer bitmask. The fields below edit individual bits; enabled bits are combined into the current value.
+            </p>
             <div class="telemetry-row"><span>Current value</span><span id="auto-options-value">-</span></div>
+            <p id="auto-options-decoded" class="auto-options-decoded" aria-live="polite">Reading option bits...</p>
             <label class="auto-option-control" for="auto-allow-arm-in-auto">
               <span>Allow arming in AUTO (bit 0)</span>
               <input id="auto-allow-arm-in-auto" type="number" min="0" max="1" step="1" value="0" inputmode="numeric">
-              <small>0 = disabled; 1 = enabled.</small>
+              <small>0 = disabled; 1 = enabled. Start Mission arms in GUIDED first, so this bit is not required for that flow.</small>
             </label>
             <label class="auto-option-control" for="auto-takeoff-without-throttle">
               <span>Takeoff without raising throttle (bit 1)</span>
               <input id="auto-takeoff-without-throttle" type="number" min="0" max="1" step="1" value="0" inputmode="numeric">
-              <small>0 = disabled; 1 = enabled.</small>
+              <small>0 = disabled; 1 = enabled. Enables AUTO mission takeoff without the pilot raising the throttle stick.</small>
             </label>
             <div class="action-grid">
               <button class="act" id="auto-options-refresh" type="button">Refresh parameter</button>
@@ -294,6 +298,6 @@
     }
   }, 4000);
 </script>
-<script type="module" src="js/app.js?v=20261022-1"></script>
+<script type="module" src="js/app.js?v=20261022-2"></script>
 </body>
 </html>

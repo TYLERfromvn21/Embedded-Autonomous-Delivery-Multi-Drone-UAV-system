@@ -30,12 +30,33 @@ class VehicleMissions:
 
         current_lat = int(self.state["lat"] * 10_000_000)
         current_lon = int(self.state["lon"] * 10_000_000)
-        mission_items = [
+        mission_items = []
+        if self.state.get("autopilot") == "ArduPilot":
+            # ArduPilot reserves sequence 0 for the home position.
+            mission_items.append(
+                MissionItem(
+                    seq=0,
+                    frame=0,
+                    command=MAV_CMD_NAV_WAYPOINT,
+                    current=1,
+                    autocontinue=1,
+                    param1=0.0,
+                    param2=0.0,
+                    param3=0.0,
+                    param4=float("nan"),
+                    x=current_lat,
+                    y=current_lon,
+                    z=float(self.state.get("absolute_alt") or 0.0),
+                    mission_type=0,
+                )
+            )
+
+        mission_items.append(
             MissionItem(
-                seq=0,
+                seq=len(mission_items),
                 frame=3,
                 command=MAV_CMD_NAV_TAKEOFF,
-                current=0,
+                current=0 if mission_items else 1,
                 autocontinue=1,
                 param1=0.0,
                 param2=0.0,
@@ -45,13 +66,13 @@ class VehicleMissions:
                 y=current_lon,
                 z=float(waypoints[0].get("alt", DEFAULT_WAYPOINT_ALTITUDE_M)),
                 mission_type=0,
-            ),
-        ]
+            )
+        )
 
-        for sequence, waypoint in enumerate(waypoints, start=1):
+        for waypoint in waypoints:
             mission_items.append(
                 MissionItem(
-                    seq=sequence,
+                    seq=len(mission_items),
                     frame=3,
                     command=MAV_CMD_NAV_WAYPOINT,
                     current=0,
@@ -88,6 +109,16 @@ class VehicleMissions:
         self._stop_mission_completion_monitor()
         await self.system.mission_raw.clear_mission()
         elapsed = await self._timed(self.system.mission_raw.upload_mission(mission_items))
+        try:
+            stored_items = await self.system.mission_raw.download_mission()
+        except Exception as error:
+            raise RuntimeError(f"Upload was acknowledged, but the stored mission could not be verified: {error}") from error
+        if not any(item.command == MAV_CMD_NAV_TAKEOFF for item in stored_items):
+            stored_commands = ", ".join(str(item.command) for item in stored_items)
+            raise RuntimeError(
+                "Upload was acknowledged, but the autopilot did not retain the NAV_TAKEOFF command "
+                f"(downloaded commands: {stored_commands or 'none'})."
+            )
         self.state["waypoints"] = waypoints
         logger.info("[%s] Uploaded mission with %s waypoint(s)", self.uav_id, len(waypoints))
         return elapsed

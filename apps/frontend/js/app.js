@@ -3,7 +3,7 @@
 import { connectWebSocket } from './ws-client.js?v=20261019-3';
 import { initMap } from './map-view.js?v=20261020-1';
 import { initFleetView } from './fleet-view.js?v=20261015-9';
-import { initActionsView } from './actions-view.js?v=20261022-1';
+import { initActionsView } from './actions-view.js?v=20261022-2';
 import { initStationsView } from './station-view.js?v=20261019-2';
 import { initVideoView } from './video-view.js?v=20261016-1';
 import { onStateUpdate } from './state.js?v=20261015-7';

@@ -200,8 +200,23 @@ body {
 .flight-target-controls .act { padding: 7px 4px; font-size: 10px; }
 .flight-setting-note { grid-column: 1 / -1; color: var(--text-muted); font-size: 10px; line-height: 1.45; }
 #auto-options-panel h3,
+#auto-options-panel .auto-options-explanation,
+#auto-options-panel .auto-options-decoded,
 #auto-options-panel .telemetry-row,
 #auto-options-panel .flight-setting-note { grid-column: 1 / -1; }
+#auto-options-panel.auto-options-card {
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-1));
+}
+#auto-options-panel h3 { margin: 0; color: var(--text-primary); font-size: 15px; }
+#auto-options-panel h3 span { color: var(--accent); font: 11px var(--font-mono); }
+#auto-options-panel .auto-options-explanation,
+#auto-options-panel .auto-options-decoded { margin: 0; font-size: 11px; line-height: 1.45; }
+#auto-options-panel .auto-options-explanation { color: var(--text-secondary); }
+#auto-options-panel .auto-options-decoded { padding: 7px 9px; color: var(--accent); background: var(--bg-0); border-radius: var(--radius); }
+#auto-options-panel #auto-options-value { font-size: 15px; font-weight: 700; }
 #auto-options-panel .action-grid { grid-column: 1 / -1; }
 #auto-options-panel .auto-option-control {
   grid-column: 1 / -1;
@@ -212,7 +227,7 @@ body {
   font-size: 12px;
 }
 #auto-options-panel .auto-option-control input { width: 68px; text-align: center; }
-#auto-options-panel .auto-option-control small { grid-column: 1 / -1; color: var(--text-muted); font-size: 10px; }
+#auto-options-panel .auto-option-control small { grid-column: 1 / -1; color: var(--text-muted); font-size: 10px; line-height: 1.4; }
 #auto-options-status.is-error { color: var(--danger, #ff6b6b); }
 .map-takeoff-note { padding: 1px 2px 3px; }
 
