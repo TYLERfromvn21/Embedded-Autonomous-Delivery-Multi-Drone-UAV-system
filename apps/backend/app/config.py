@@ -14,7 +14,7 @@ import os
 # additional SITL instances use ports 14541 and 14542.
 UAV_CONFIGS = {
     "uav1": os.environ.get("UAV1_URL", "udp://0.0.0.0:14550"),
-    "uav2": os.environ.get("UAV2_URL", "udp://:14541"),
+    # "uav2": os.environ.get("UAV2_URL", "udp://:14541"),
     #"uav3": os.environ.get("UAV3_URL", "udp://:14542"),
 }
 

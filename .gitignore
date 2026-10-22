@@ -1,1 +1,4 @@
 venv/
+apps/backend/app/vehicle_manager/__pycache__/
+apps/backend/app/routers/__pycache__/
+apps/backend/app/__pycache__/

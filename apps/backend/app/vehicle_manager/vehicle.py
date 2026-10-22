@@ -439,13 +439,12 @@ class Vehicle(VehicleActions, VehicleMissions, VehicleModes, VehicleParameters, 
         self.state["flight_warnings"] = list(warning_messages.values())
 
     async def _watch_landed_state(self):
-
         async for landed_state in self.system.telemetry.landed_state():
 
             self._record_telemetry("LANDED_STATE")
 
             self.state["is_landed"] = str(landed_state).split(".")[-1] == "ON_GROUND"
-
+        
             if self.state["is_landed"] and self.state["alt"] is not None and self.state["alt"] < 0:
                 self.state["alt"] = 0.0
 
@@ -611,7 +610,7 @@ class Vehicle(VehicleActions, VehicleMissions, VehicleModes, VehicleParameters, 
         from mavsdk.mavlink_direct import MavlinkMessage
 
         # MAV_CMD_SET_MESSAGE_INTERVAL (511), message IDs defined by MAVLink.
-        for message_id in (1, 24, 30, 33, 74, 147):
+        for message_id in (1, 24, 30, 33, 74, 147, 245):
             try:
                 await self.system.mavlink_direct.send_message(
                     MavlinkMessage(

@@ -5,7 +5,10 @@ import logging
 import time
 
 from app.config import DEFAULT_FLIGHT_SPEED_M_S, DEFAULT_WAYPOINT_ALTITUDE_M
-from app.vehicle_manager.parameters import AUTO_OPTIONS_TAKEOFF_WITHOUT_THROTTLE
+from app.vehicle_manager.parameters import (
+    AUTO_OPTIONS_ALLOW_ARM_IN_AUTO,
+    AUTO_OPTIONS_TAKEOFF_WITHOUT_THROTTLE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +20,20 @@ MISSION_LANDED_STATE_TIMEOUT_S = 60 * 60
 
 class VehicleMissions:
     """Mission-related MAVSDK commands."""
+
+    async def set_auto_options_parameters(self):
+        auto_options = await self.get_auto_options()
+        if auto_options & AUTO_OPTIONS_TAKEOFF_WITHOUT_THROTTLE:
+            return True
+
+        await self.update_auto_options(
+            allow_arming_in_auto=bool(auto_options & AUTO_OPTIONS_ALLOW_ARM_IN_AUTO),
+            takeoff_without_throttle=True,
+        )
+        await asyncio.sleep(1)
+        auto_options = await self.get_auto_options()
+        return bool(auto_options & AUTO_OPTIONS_TAKEOFF_WITHOUT_THROTTLE)
+
 
     async def upload_mission(self, waypoints: list[dict]):
         from mavsdk.mission_raw import MissionItem
@@ -186,15 +203,22 @@ class VehicleMissions:
         ]
 
         if self.state["autopilot"] == "ArduPilot":
-            try:
-                auto_options = await self.get_auto_options()
-            except Exception as error:
-                raise RuntimeError(f"Could not read ArduPilot AUTO_OPTIONS: {error}") from error
-            if not auto_options & AUTO_OPTIONS_TAKEOFF_WITHOUT_THROTTLE:
+            # try:
+            #     auto_options = await self.get_auto_options()
+            # except Exception as error:
+            #     raise RuntimeError(f"Could not read ArduPilot AUTO_OPTIONS: {error}") from error
+
+            if not await self.set_auto_options_parameters():
                 raise RuntimeError(
-                    "AUTO_OPTIONS bit 1 is disabled. Enable 'Takeoff without raising throttle' "
-                    "in Actions before starting an automatic takeoff mission."
+                "Could not enable AUTO_OPTIONS 'Takeoff without raising throttle'; "
+                "the mission was not started."
                 )
+    
+            # if not auto_options & AUTO_OPTIONS_TAKEOFF_WITHOUT_THROTTLE:
+            #     raise RuntimeError(
+            #         "AUTO_OPTIONS bit 1 is disabled. Enable 'Takeoff without raising throttle' "
+            #         "in Actions before starting an automatic takeoff mission."
+            #     )
 
     def _has_valid_gps_position(self) -> bool:
         lat = self.state.get("lat")
@@ -223,7 +247,7 @@ class VehicleMissions:
                 raise RuntimeError("UAV left the ground before AUTO mode was selected; mission was not started.")
 
         elapsed_ms += await self.set_flight_mode("AUTO")
-        logger.info("[%s] Mission start accepted: armed in GUIDED, then entered AUTO", self.uav_id)
+        # logger.info("[%s] Mission start accepted: armed in GUIDED, then entered AUTO", self.uav_id)
         return elapsed_ms
 
     async def _start_px4_mission(self):

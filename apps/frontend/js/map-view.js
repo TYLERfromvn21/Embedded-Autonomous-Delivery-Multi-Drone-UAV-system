@@ -766,7 +766,7 @@ async function startSelectedMission() {
   }
   const result = await startMission(state.activeUav);
   if (!result.success) alert(`Mission start failed: ${result.message}`);
-  else alert(result.message);
+  // else alert(result.message);
 }
 
 async function resumeSelectedMission() {
