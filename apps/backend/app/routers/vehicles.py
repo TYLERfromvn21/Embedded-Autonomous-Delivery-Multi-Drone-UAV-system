@@ -22,6 +22,10 @@ from app.vehicle_manager.parameters import (
 router = APIRouter()
 
 
+def _is_tenth_step(value: float) -> bool:
+    return abs(value * 10 - round(value * 10)) <= 1e-6
+
+
 class ActionResponse(BaseModel):
     success: bool
     message: str = ""
@@ -131,6 +135,8 @@ def register_routes(router: APIRouter, manager):
             le=MAX_ALTITUDE_M,
         ),
     ):
+        if not _is_tenth_step(altitude):
+            raise HTTPException(status_code=422, detail="Takeoff altitude must use 0.1 m increments")
         return await _run_action(uav_id, "takeoff", altitude)
 
     @router.post("/vehicles/{uav_id}/takeoff-altitude", response_model=ActionResponse)
@@ -140,6 +146,8 @@ def register_routes(router: APIRouter, manager):
                 status_code=422,
                 detail=f"Takeoff altitude must be between {MIN_ALTITUDE_M:g} and {MAX_ALTITUDE_M:g} m",
             )
+        if not _is_tenth_step(request.altitude_m):
+            raise HTTPException(status_code=422, detail="Takeoff altitude must use 0.1 m increments")
         response = await _run_action(uav_id, "set_takeoff_altitude", request.altitude_m)
         if response.success:
             response.message = f"Autopilot confirmed takeoff altitude {request.altitude_m:.2f} m for {uav_id}"
@@ -152,6 +160,8 @@ def register_routes(router: APIRouter, manager):
                 status_code=422,
                 detail=f"Altitude must be between {MIN_ALTITUDE_M:g} and {MAX_ALTITUDE_M:g} m",
             )
+        if not _is_tenth_step(request.altitude_m):
+            raise HTTPException(status_code=422, detail="Altitude must use 0.1 m increments")
         return await _run_action(uav_id, "change_altitude", request.altitude_m)
 
     @router.post("/vehicles/{uav_id}/speed", response_model=ActionResponse)
@@ -161,7 +171,20 @@ def register_routes(router: APIRouter, manager):
                 status_code=422,
                 detail=f"Speed must be between {MIN_FLIGHT_SPEED_M_S:g} and {MAX_FLIGHT_SPEED_M_S:g} m/s",
             )
-        return await _run_action(uav_id, "change_speed", request.speed_m_s)
+        if not _is_tenth_step(request.speed_m_s):
+            raise HTTPException(status_code=422, detail="Speed must use 0.1 m/s increments")
+        response = await _run_action(uav_id, "change_speed", request.speed_m_s)
+        if response.success:
+            vehicle = manager.get(uav_id)
+            if vehicle.state.get("autopilot") == "ArduPilot":
+                response.message = (
+                    f"Target speed saved: {request.speed_m_s:.1f} m/s; "
+                    f"WP_SPD={vehicle.state.get('waypoint_speed_m_s', request.speed_m_s):.1f} m/s, "
+                    f"RTL_SPEED_MS={vehicle.state.get('rtl_speed_m_s', request.speed_m_s):.1f} m/s"
+                )
+            else:
+                response.message = f"Target speed saved: {request.speed_m_s:.1f} m/s for the next uploaded mission"
+        return response
 
     @router.post("/vehicles/{uav_id}/land", response_model=ActionResponse)
     async def land(uav_id: str):

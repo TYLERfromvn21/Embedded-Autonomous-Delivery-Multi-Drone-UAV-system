@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 
 MAV_CMD_NAV_WAYPOINT = 16
 MAV_CMD_NAV_TAKEOFF = 22
-MAV_CMD_NAV_RETURN_TO_LAUNCH = 20
+MAV_CMD_NAV_LAND = 21
+MAV_CMD_DO_CHANGE_SPEED = 178
 MISSION_LANDED_STATE_TIMEOUT_S = 60 * 60
 
 
@@ -44,6 +45,13 @@ class VehicleMissions:
             raise RuntimeError("Vehicle has no valid GPS position for mission upload.")
         if self.state["armed"] and self.state["is_landed"] is not True:
             raise RuntimeError("Cannot replace a mission while the UAV is armed in flight.")
+        if self.state.get("autopilot") == "ArduPilot":
+            target_speed = float(
+                waypoints[0].get("speed_m_s", self.state.get("target_speed_m_s", DEFAULT_FLIGHT_SPEED_M_S))
+            )
+            await self.set_waypoint_speed(target_speed)
+            await self.set_rtl_speed(target_speed)
+            self.state["target_speed_m_s"] = target_speed
 
         current_lat = int(self.state["lat"] * 10_000_000)
         current_lon = int(self.state["lon"] * 10_000_000)
@@ -86,7 +94,33 @@ class VehicleMissions:
             )
         )
 
+        previous_speed = None
         for waypoint in waypoints:
+            speed_m_s = float(
+                waypoint.get("speed_m_s", self.state.get("target_speed_m_s", DEFAULT_FLIGHT_SPEED_M_S))
+            )
+            if (
+                self.state.get("autopilot") != "ArduPilot"
+                and (previous_speed is None or abs(speed_m_s - previous_speed) > 0.01)
+            ):
+                mission_items.append(
+                    MissionItem(
+                        seq=len(mission_items),
+                        frame=2,
+                        command=MAV_CMD_DO_CHANGE_SPEED,
+                        current=0,
+                        autocontinue=1,
+                        param1=1.0,
+                        param2=speed_m_s,
+                        param3=-1.0,
+                        param4=0.0,
+                        x=0,
+                        y=0,
+                        z=0.0,
+                        mission_type=0,
+                    )
+                )
+                previous_speed = speed_m_s
             mission_items.append(
                 MissionItem(
                     seq=len(mission_items),
@@ -105,19 +139,20 @@ class VehicleMissions:
                 )
             )
 
+        final_waypoint = waypoints[-1]
         mission_items.append(
             MissionItem(
                 seq=len(mission_items),
-                frame=2,
-                command=MAV_CMD_NAV_RETURN_TO_LAUNCH,
+                frame=3,
+                command=MAV_CMD_NAV_LAND,
                 current=0,
                 autocontinue=1,
                 param1=0.0,
                 param2=0.0,
                 param3=0.0,
-                param4=0.0,
-                x=0,
-                y=0,
+                param4=float("nan"),
+                x=int(final_waypoint["lat"] * 10_000_000),
+                y=int(final_waypoint["lon"] * 10_000_000),
                 z=0.0,
                 mission_type=0,
             )
@@ -139,6 +174,56 @@ class VehicleMissions:
         self.state["waypoints"] = waypoints
         logger.info("[%s] Uploaded mission with %s waypoint(s)", self.uav_id, len(waypoints))
         return elapsed
+
+    def _decode_mission_waypoints(self, mission_items: list) -> list[dict]:
+        speed_m_s = float(self.state.get("target_speed_m_s", DEFAULT_FLIGHT_SPEED_M_S))
+        waypoints = []
+        for item in mission_items:
+            if item.command == MAV_CMD_DO_CHANGE_SPEED:
+                speed_m_s = float(item.param2)
+            elif item.command == MAV_CMD_NAV_WAYPOINT:
+                waypoints.append(
+                    {
+                        "lat": item.x / 10_000_000,
+                        "lon": item.y / 10_000_000,
+                        "alt": float(item.z),
+                        "speed_m_s": speed_m_s,
+                    }
+                )
+        if waypoints:
+            self.state["target_speed_m_s"] = waypoints[-1]["speed_m_s"]
+        return waypoints
+
+    async def sync_mission_from_autopilot(self):
+        """Refresh the displayed waypoint list from the autopilot's stored mission."""
+        stored_items = await self.system.mission_raw.download_mission()
+        takeoff_index = next(
+            (index for index, item in enumerate(stored_items) if item.command == MAV_CMD_NAV_TAKEOFF),
+            None,
+        )
+        mission_items = (
+            stored_items[takeoff_index + 1 :]
+            if takeoff_index is not None
+            else [
+                item for item in stored_items
+                if not (self.state.get("autopilot") == "ArduPilot" and item.current)
+            ]
+        )
+        if self.state.get("autopilot") == "ArduPilot":
+            try:
+                self.state["target_speed_m_s"] = float(
+                    await self.system.param.get_param_float("WP_SPD")
+                )
+            except Exception:
+                logger.debug("[%s] Could not restore WP_SPD from autopilot", self.uav_id, exc_info=True)
+        waypoints = self._decode_mission_waypoints(mission_items)
+        self.state["waypoints"] = waypoints
+        logger.info(
+            "[%s] Synced %s waypoint(s) from the autopilot mission",
+            self.uav_id,
+            len(waypoints),
+        )
+        return waypoints
 
     async def clear_mission(self):
         if self.state["armed"] and self.state["is_landed"] is not True:
@@ -191,16 +276,7 @@ class VehicleMissions:
         ):
             raise RuntimeError("The stored mission has no waypoint after its takeoff command.")
 
-        self.state["waypoints"] = [
-            {
-                "lat": item.x / 10_000_000,
-                "lon": item.y / 10_000_000,
-                "alt": float(item.z),
-                "speed_m_s": DEFAULT_FLIGHT_SPEED_M_S,
-            }
-            for item in mission_items[takeoff_index + 1 :]
-            if item.command == MAV_CMD_NAV_WAYPOINT
-        ]
+        self.state["waypoints"] = self._decode_mission_waypoints(mission_items[takeoff_index + 1 :])
 
         if self.state["autopilot"] == "ArduPilot":
             # try:

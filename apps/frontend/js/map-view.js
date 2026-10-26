@@ -12,7 +12,7 @@ import {
   setTakeoffAltitude,
 } from './api.js?v=20261020-1';
 
-import { FLIGHT_CONFIG, FLIGHT_MODE_OPTIONS, LANDING_STATION_CONFIG, MAP_CONFIG, loadFlightSettings as loadSavedFlightSettings } from './config.js?v=20261019-3';
+import { FLIGHT_CONFIG, FLIGHT_MODE_OPTIONS, LANDING_STATION_CONFIG, MAP_CONFIG, loadFlightSettings as loadSavedFlightSettings } from './config.js?v=20261026-1';
 
 let map;
 let vehicleMarkers = {};
@@ -662,7 +662,7 @@ function wireButtons() {
       return;
     }
     const speed = settingsFor(state.activeUav).speedMps;
-    if (!confirm(`Command ${state.activeUav} to change flight speed to ${speed} m/s?`)) return;
+    if (!confirm(`Save target flight speed ${speed} m/s for ${state.activeUav}?`)) return;
     const result = await changeSpeed(state.activeUav, speed);
     if (!result.success) alert(`Speed change failed: ${result.message}`);
     else alert(result.message);
@@ -721,12 +721,14 @@ function wireButtons() {
       if (!confirmed) return;
     }
 
-    const result = await uploadMission(state.activeUav, waypoints);
+    const targetSpeed = settingsFor(state.activeUav).speedMps;
+    const missionWaypoints = waypoints.map((waypoint) => ({ ...waypoint, speed_m_s: targetSpeed }));
+    const result = await uploadMission(state.activeUav, missionWaypoints);
     if (!result.success) {
       alert(`Mission upload failed: ${result.message}`);
       return;
     }
-    uploadedRoutes[state.activeUav] = waypoints.map((waypoint) => ({ ...waypoint }));
+    uploadedRoutes[state.activeUav] = missionWaypoints.map((waypoint) => ({ ...waypoint }));
     state.draftRoutes[state.activeUav] = [];
     routeRenderSignature = '';
     renderMissionPlanning();

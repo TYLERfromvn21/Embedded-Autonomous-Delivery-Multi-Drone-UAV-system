@@ -1,31 +1,52 @@
-"""Backend configuration for vehicle connections and operational defaults.
+"""Backend configuration for UAV links, cameras, and operational defaults.
 
-Edit this file (or its documented environment overrides) to change backend
-parameters. Consumers are noted beside each setting so values are not copied
-into routers and vehicle-manager code. Frontend counterparts live in
-apps/frontend/js/config.js.
+Edit UAV_NETWORK_CONFIGS to change a vehicle's IP, MAVLink listen port, or
+MediaMTX camera endpoint. The URL dictionaries below are derived from it.
 """
 
 import os
 
-# Fleet configuration: UAV ID -> MAVLink connection URL. Consumed by
-# main.py and vehicle_manager/manager.py to construct per-UAV connections.
-# Listen for MAVLink UDP packets. PiKhawk setup sends to port 14550;
-# additional SITL instances use ports 14541 and 14542.
+
+# Per-UAV network endpoints. Update each IP to the address reachable from the
+# browser; camera ports and paths can differ between vehicles.
+UAV_NETWORK_CONFIGS = {
+    "uav1": {
+        "ip": "172.20.10.4",
+        "mavlink_listen_port": 14550,
+        "camera_port": 8889,
+        "camera_path": "/cam/",
+    },
+    "uav2": {
+        "ip": "172.20.10.5",  # Replace with UAV2's actual address.
+        "mavlink_listen_port": 14541,
+        "camera_port": 8889,
+        "camera_path": "/cam/",
+    },
+    "uav3": {
+        "ip": "172.20.10.4",  # Replace with UAV3's actual address.
+        "mavlink_listen_port": 14542,
+        "camera_port": 8889,
+        "camera_path": "/cam/",
+    },
+}
+
+# MAVSDK listens on UDP ports belonging to the backend host. The UAV IP above
+# is for its camera URL; it must not replace 0.0.0.0, which is the local bind
+# address receiving MAVLink packets. UAV*_URL can override a vehicle link.
 UAV_CONFIGS = {
-    "uav1": os.environ.get("UAV1_URL", "udp://0.0.0.0:14550"),
-    # "uav2": os.environ.get("UAV2_URL", "udp://:14541"),
-    #"uav3": os.environ.get("UAV3_URL", "udp://:14542"),
+    uav_id: os.environ.get(
+        f"{uav_id.upper()}_URL",
+        f"udp://0.0.0.0:{settings['mavlink_listen_port']}",
+    )
+    for uav_id, settings in UAV_NETWORK_CONFIGS.items()
 }
 
-# Browser-reachable camera URLs (for example, an MJPEG endpoint). Consumed by
-# vehicle_manager/vehicle.py and sent with each vehicle state to the frontend.
+# Browser camera URLs are generated automatically from the settings above.
 UAV_CAMERA_URLS = {
-    uav_id: os.environ.get(f"{uav_id.upper()}_CAMERA_URL", "").strip() or None
-    for uav_id in UAV_CONFIGS
+    uav_id: f"http://{settings['ip']}:{settings['camera_port']}{settings['camera_path']}"
+    for uav_id, settings in UAV_NETWORK_CONFIGS.items()
 }
 
-#host ip and port for the backend to listen on. Can be overridden with environment variables.
 # Server bind defaults for the launcher/deployment configuration.
 HOST = os.environ.get("GCS_HOST", "0.0.0.0")
 PORT = int(os.environ.get("GCS_PORT", "8000"))
@@ -33,24 +54,20 @@ PORT = int(os.environ.get("GCS_PORT", "8000"))
 # WebSocket broadcast cadence in seconds. Consumed by main.py and routers/ws.py.
 TELEMETRY_BROADCAST_INTERVAL_S = 0.5
 # Mark a UAV offline after this many seconds without MAVSDK telemetry.
-# Consumed by vehicle_manager/vehicle.py.
 TELEMETRY_TIMEOUT_S = 5.0
 
-# Flight-warning thresholds based on NED velocity telemetry. Consumed by
-# vehicle_manager/vehicle.py; override with the corresponding environment vars.
+# Flight-warning thresholds based on NED velocity telemetry.
 VERTICAL_DESCENT_WARNING_M_S = float(os.environ.get("VERTICAL_DESCENT_WARNING_M_S", "-10.0"))
 HORIZONTAL_SPEED_WARNING_M_S = float(os.environ.get("HORIZONTAL_SPEED_WARNING_M_S", "20.0"))
 
-# Pilot and mission defaults/validation limits. Consumed by routers/vehicles.py,
-# routers/missions.py, and vehicle_manager/actions.py, missions.py, sequences.py.
+# Pilot and mission defaults/validation limits.
 DEFAULT_TAKEOFF_ALTITUDE_M = 3.0
 DEFAULT_WAYPOINT_ALTITUDE_M = 3.0
-DEFAULT_FLIGHT_SPEED_M_S = 5.0
+DEFAULT_FLIGHT_SPEED_M_S = 4.0
 MIN_ALTITUDE_M = 1.0
 MAX_ALTITUDE_M = 120.0
 MIN_FLIGHT_SPEED_M_S = 0.5
 MAX_FLIGHT_SPEED_M_S = 30.0
 
 # Recent autopilot status text is appended to command errors for this duration.
-# Consumed by vehicle_manager/actions.py.
 AUTOPILOT_STATUS_MAX_AGE_S = 10.0

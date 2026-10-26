@@ -4,6 +4,14 @@ let selectedUavId = null;
 let activeStreamKey = '';
 let lastListSignature = '';
 let failedStreamKey = '';
+let streamGeneration = 0;
+let peerConnection = null;
+let whepSessionUrl = null;
+let reconnectTimer = null;
+let watchdogTimer = null;
+let reconnectAttempts = 0;
+let lastVideoTime = 0;
+let lastFrameProgressAt = 0;
 
 export function initVideoView() {
   onStateUpdate(renderVideoView);
@@ -37,7 +45,9 @@ function renderVideoView(vehicles) {
   if (listSignature !== lastListSignature) {
     lastListSignature = listSignature;
     list.innerHTML = vehicles.map((vehicle) => {
-      const status = !vehicle.connected ? 'Offline' : vehicle.camera_url ? 'Camera ready' : 'No camera URL';
+      const status = vehicle.camera_url
+        ? (vehicle.connected ? 'Camera ready' : 'Camera ready (UAV offline)')
+        : (vehicle.connected ? 'No camera URL' : 'Offline (no camera URL)');
       return `<button type="button" class="video-uav-item ${vehicle.uav_id === selectedUavId ? 'active' : ''}"
         data-video-uav="${escapeHtml(vehicle.uav_id)}" aria-pressed="${vehicle.uav_id === selectedUavId}">
         <span class="video-uav-indicator ${vehicle.connected ? 'connected' : ''}" aria-hidden="true"></span>
@@ -72,20 +82,13 @@ function renderVideoView(vehicles) {
 
   title.textContent = selected.uav_id;
   subtitle.textContent = selected.autopilot ? `${selected.autopilot} · ${selected.flight_mode ?? 'Mode unavailable'}` : 'Live camera stream';
-  badge.textContent = selected.connected ? 'UAV connected' : 'UAV offline';
+  badge.textContent = selected.connected ? 'UAV connected' : 'UAV offline · camera can still stream';
   badge.dataset.state = selected.connected ? 'connected' : 'offline';
-
-  if (!selected.connected) {
-    emptyTitle.textContent = 'UAV is offline';
-    emptyMessage.textContent = 'The camera stream is available when the UAV reconnects.';
-    stopStreams(image, video);
-    emptyState.hidden = false;
-    return;
-  }
+  badge.dataset.uavConnected = String(selected.connected);
 
   if (!selected.camera_url) {
     emptyTitle.textContent = 'Camera URL is not configured';
-    emptyMessage.textContent = `Set ${selected.uav_id.toUpperCase()}_CAMERA_URL in the backend environment, then restart the backend.`;
+    emptyMessage.textContent = `Configure the ${selected.uav_id.toUpperCase()} camera in the backend config file, then restart the backend.`;
     stopStreams(image, video);
     emptyState.hidden = false;
     return;
@@ -100,8 +103,6 @@ function renderVideoView(vehicles) {
     return;
   }
 
-  emptyState.hidden = true;
-  streamLabel.textContent = 'LIVE CAMERA';
   const streamKey = `${selected.uav_id}:${streamUrl}`;
   if (streamKey === activeStreamKey) return;
   if (streamKey === failedStreamKey) {
@@ -112,17 +113,145 @@ function renderVideoView(vehicles) {
   }
   stopStreams(image, video);
   activeStreamKey = streamKey;
+  failedStreamKey = '';
+  streamLabel.textContent = 'LIVE CAMERA';
 
-  if (/\.(mp4|webm|ogv)(\?|$)/i.test(streamUrl)) {
+  if (isMediaMtxPlayer(streamUrl)) {
+    emptyTitle.textContent = 'Connecting to camera';
+    emptyMessage.textContent = 'The video will start automatically. The connection retries if the stream drops.';
+    emptyState.hidden = false;
+    reconnectAttempts = 0;
+    connectWhep(mediaMtxWhepUrl(streamUrl), video, badge, emptyState, streamKey, streamGeneration);
+  } else if (/\.(mp4|webm|ogv)(\?|$)/i.test(streamUrl)) {
+    emptyState.hidden = true;
     video.hidden = false;
+    video.controls = true;
     video.src = streamUrl;
     video.play().catch(() => {});
     video.onerror = () => showStreamError(emptyState, emptyTitle, emptyMessage, image, video);
   } else {
+    emptyState.hidden = true;
     image.hidden = false;
     image.src = streamUrl;
     image.onerror = () => showStreamError(emptyState, emptyTitle, emptyMessage, image, video);
   }
+}
+
+async function connectWhep(endpoint, video, badge, emptyState, streamKey, generation) {
+  if (generation !== streamGeneration || activeStreamKey !== streamKey) return;
+  if (watchdogTimer) window.clearInterval(watchdogTimer);
+  watchdogTimer = null;
+  const connection = new RTCPeerConnection();
+  peerConnection = connection;
+  const remoteStream = new MediaStream();
+  video.hidden = false;
+  video.autoplay = true;
+  video.muted = true;
+  video.playsInline = true;
+  video.controls = false;
+  video.srcObject = remoteStream;
+  lastVideoTime = 0;
+  lastFrameProgressAt = Date.now();
+
+  connection.addTransceiver('video', { direction: 'recvonly' });
+  connection.ontrack = (event) => {
+    if (generation !== streamGeneration || activeStreamKey !== streamKey || peerConnection !== connection) return;
+    const stream = event.streams?.[0];
+    if (stream) {
+      video.srcObject = stream;
+    } else if (!remoteStream.getTracks().some((track) => track.id === event.track.id)) {
+      remoteStream.addTrack(event.track);
+    }
+    emptyState.hidden = true;
+    video.play().catch(() => {});
+  };
+  connection.onconnectionstatechange = () => {
+    if (generation !== streamGeneration || activeStreamKey !== streamKey || peerConnection !== connection) return;
+    if (connection.connectionState === 'failed' || connection.connectionState === 'closed') {
+      queueReconnect(endpoint, video, badge, emptyState, streamKey, generation);
+    } else if (connection.connectionState === 'disconnected') {
+      queueReconnect(endpoint, video, badge, emptyState, streamKey, generation, 4000);
+    }
+  };
+
+  watchdogTimer = window.setInterval(() => {
+    if (generation !== streamGeneration || activeStreamKey !== streamKey || peerConnection !== connection) return;
+    const now = Date.now();
+    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.currentTime > lastVideoTime + 0.05) {
+      lastVideoTime = video.currentTime;
+      lastFrameProgressAt = now;
+      reconnectAttempts = 0;
+      badge.textContent = 'Camera live' + (badge.dataset.uavConnected === 'true' ? ' · UAV connected' : ' · UAV offline');
+      return;
+    }
+    if (now - lastFrameProgressAt > 8000) {
+      queueReconnect(endpoint, video, badge, emptyState, streamKey, generation);
+    }
+  }, 3000);
+
+  try {
+    const offer = await connection.createOffer();
+    await connection.setLocalDescription(offer);
+    await waitForIceGathering(connection, 6000);
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/sdp', Accept: 'application/sdp' },
+      body: connection.localDescription.sdp,
+    });
+    if (!response.ok) throw new Error(`WebRTC handshake failed (${response.status})`);
+    const location = response.headers.get('Location');
+    const sessionUrl = location ? new URL(location, endpoint).href : null;
+    const answer = await response.text();
+    if (generation !== streamGeneration || activeStreamKey !== streamKey || peerConnection !== connection) {
+      if (sessionUrl) fetch(sessionUrl, { method: 'DELETE', keepalive: true }).catch(() => {});
+      return;
+    }
+    whepSessionUrl = sessionUrl;
+    await connection.setRemoteDescription({ type: 'answer', sdp: answer });
+  } catch (error) {
+    if (generation !== streamGeneration || activeStreamKey !== streamKey || peerConnection !== connection) return;
+    console.warn(`[${streamKey}] WebRTC connection failed; retrying`, error);
+    queueReconnect(endpoint, video, badge, emptyState, streamKey, generation);
+  }
+}
+
+function queueReconnect(endpoint, video, badge, emptyState, streamKey, generation, delayOverride = null) {
+  if (generation !== streamGeneration || activeStreamKey !== streamKey || reconnectTimer) return;
+  const delay = delayOverride ?? Math.min(1000 * (2 ** reconnectAttempts), 10000);
+  reconnectAttempts += 1;
+  badge.textContent = 'Reconnecting camera';
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null;
+    if (generation !== streamGeneration || activeStreamKey !== streamKey) return;
+    if (peerConnection) {
+      peerConnection.ontrack = null;
+      peerConnection.onconnectionstatechange = null;
+      peerConnection.close();
+      peerConnection = null;
+    }
+    releaseWhepSession();
+    video.srcObject = null;
+    lastFrameProgressAt = Date.now();
+    if (watchdogTimer) window.clearInterval(watchdogTimer);
+    watchdogTimer = null;
+    connectWhep(endpoint, video, badge, emptyState, streamKey, generation);
+  }, delay);
+}
+
+function waitForIceGathering(connection, timeoutMs) {
+  if (connection.iceGatheringState === 'complete') return Promise.resolve();
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timeout);
+      connection.removeEventListener('icegatheringstatechange', onStateChange);
+      resolve();
+    };
+    const onStateChange = () => {
+      if (connection.iceGatheringState === 'complete') finish();
+    };
+    const timeout = setTimeout(finish, timeoutMs);
+    connection.addEventListener('icegatheringstatechange', onStateChange);
+  });
 }
 
 function showStreamError(emptyState, title, message, image, video) {
@@ -134,15 +263,51 @@ function showStreamError(emptyState, title, message, image, video) {
 }
 
 function stopStreams(image, video) {
+  streamGeneration += 1;
+  if (reconnectTimer) window.clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  if (watchdogTimer) window.clearInterval(watchdogTimer);
+  watchdogTimer = null;
+  if (peerConnection) {
+    peerConnection.ontrack = null;
+    peerConnection.onconnectionstatechange = null;
+    peerConnection.close();
+    peerConnection = null;
+  }
+  releaseWhepSession();
   image.onerror = null;
   image.removeAttribute('src');
   image.hidden = true;
   video.onerror = null;
   video.pause();
+  video.srcObject = null;
   video.removeAttribute('src');
   video.load();
   video.hidden = true;
   activeStreamKey = '';
+}
+
+function releaseWhepSession() {
+  const sessionUrl = whepSessionUrl;
+  whepSessionUrl = null;
+  if (sessionUrl) fetch(sessionUrl, { method: 'DELETE', keepalive: true }).catch(() => {});
+}
+
+function isMediaMtxPlayer(value) {
+  try {
+    const url = new URL(value);
+    return url.port === '8889' && !url.pathname.endsWith('/whep');
+  } catch {
+    return false;
+  }
+}
+
+function mediaMtxWhepUrl(value) {
+  const url = new URL(value);
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/whep`;
+  url.search = '';
+  url.hash = '';
+  return url.href;
 }
 
 function safeStreamUrl(value) {

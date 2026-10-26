@@ -1,6 +1,6 @@
 // api.js — thin wrapper around the backend's REST endpoints.
 
-import { BACKEND_HTTP } from './config.js?v=20261019-3';
+import { BACKEND_HTTP } from './config.js?v=20261026-1';
 
 export async function callAction(uavId, action, params = {}) {
   const query = new URLSearchParams(params);

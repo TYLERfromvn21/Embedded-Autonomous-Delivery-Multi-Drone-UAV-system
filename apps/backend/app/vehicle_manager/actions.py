@@ -51,7 +51,7 @@ class VehicleActions:
 
             raise RuntimeError("Vehicle is not armed. Press Arm first, then Takeoff.")
 
-        await self.system.action.set_takeoff_altitude(altitude_m)
+        await self.set_takeoff_altitude(altitude_m)
 
         return await self._timed(self.system.action.takeoff())
 
@@ -65,6 +65,13 @@ class VehicleActions:
                 f"Autopilot reports takeoff altitude {float(confirmed_altitude_m):.2f} m; "
                 f"requested {altitude_m:.2f} m"
             )
+        if self.state.get("autopilot") == "ArduPilot":
+            try:
+                await self.set_rtl_altitude(altitude_m)
+            except Exception as error:
+                raise RuntimeError(
+                    f"Takeoff altitude was set to {altitude_m:.2f} m, but RTL_ALT_M could not be synchronized: {error}"
+                ) from error
         return round((time.perf_counter() - started) * 1000, 1)
 
     async def land(self):
@@ -104,6 +111,8 @@ class VehicleActions:
             raise RuntimeError("Vehicle has no valid altitude telemetry.")
 
         target_altitude_msl = current_altitude_msl + (altitude_m - current_relative_altitude)
+        if self.state.get("autopilot") == "ArduPilot":
+            await self.set_rtl_altitude(altitude_m)
 
         return await self._timed(self.system.action.goto_location(
 
@@ -118,12 +127,13 @@ class VehicleActions:
         ))
 
     async def change_speed(self, speed_m_s: float):
-
-        if not self.state["armed"]:
-
-            raise RuntimeError("Vehicle must be armed before changing flight speed.")
-
-        return await self._timed(self.system.action.set_current_speed(speed_m_s))
+        """Save a target speed independently of arm state or flight mode."""
+        started = time.perf_counter()
+        if self.state.get("autopilot") == "ArduPilot":
+            await self.set_waypoint_speed(speed_m_s)
+            await self.set_rtl_speed(speed_m_s)
+        self.state["target_speed_m_s"] = float(speed_m_s)
+        return round((time.perf_counter() - started) * 1000, 1)
 
     async def goto(self, lat: float, lon: float, alt: float, yaw_deg: float = float("nan")):
 

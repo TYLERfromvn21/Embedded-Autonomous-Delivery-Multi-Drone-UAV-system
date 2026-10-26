@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <title>UAV Web GCS</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<link rel="stylesheet" href="css/styles.css?v=20261022-2" />
+<link rel="stylesheet" href="css/styles.css?v=20261023-1" />
 </head>
 <body>
 
@@ -30,9 +30,9 @@
       <section id="map-flight-panel" class="map-flight-panel">
         <div class="flight-target-controls">
           <label>Target altitude above takeoff (m)<input id="target-altitude" type="number" value=""></label>
-          <label>Flight speed (m/s)<input id="target-speed" type="number" value=""></label>
+          <label>Target flight speed (m/s)<input id="target-speed" type="number" value=""></label>
           <button class="act" id="btn-save-takeoff-target" type="button">Save takeoff target</button>
-          <button class="act" id="btn-change-speed" type="button">Change speed</button>
+          <button class="act" id="btn-change-speed" type="button">Save target speed</button>
           <div class="flight-setting-note map-takeoff-note" id="map-takeoff-target-status">Save the target while disarmed. Takeoff will use it; in-flight altitude changes are in Actions.</div>
         </div>
         <h3>Flight status — <span id="active-uav-label">-</span></h3>
@@ -152,10 +152,10 @@
           <div class="telemetry-row"><span>Telemetry streams</span><span id="action-telemetry-streams">Waiting</span></div>
           <div class="flight-target-controls">
             <label>Takeoff target altitude (m)<input id="action-target-altitude" type="number" value=""></label>
-            <label>Flight speed (m/s)<input id="action-target-speed" type="number" value=""></label>
+            <label>Target flight speed (m/s)<input id="action-target-speed" type="number" value=""></label>
             <button class="act primary" id="action-save-takeoff-target" type="button">Save takeoff target</button>
             <button class="act" id="action-change-altitude" type="button">Change altitude in flight</button>
-            <button class="act" id="action-change-speed" type="button">Change speed in flight</button>
+            <button class="act" id="action-change-speed" type="button">Save target speed</button>
             <div id="action-takeoff-target-status" class="flight-setting-note" role="status" aria-live="polite">
               The saved target is used by Takeoff. You can set it before arming.
             </div>
@@ -245,7 +245,7 @@
       </div>
       <footer class="video-stage-footer">
         <span id="video-stream-label">Camera feed</span>
-        <span>For MJPEG cameras, use a browser-accessible HTTP stream URL.</span>
+        <span>Supports browser-accessible MJPEG, video, and WebRTC player URLs.</span>
       </footer>
     </section>
   </div>
@@ -298,6 +298,6 @@
     }
   }, 4000);
 </script>
-<script type="module" src="js/app.js?v=20261022-2"></script>
+<script type="module" src="js/app.js?v=20261023-3"></script>
 </body>
 </html>

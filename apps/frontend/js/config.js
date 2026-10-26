@@ -18,11 +18,11 @@ export const FLIGHT_CONFIG = Object.freeze({
   defaultAltitudeM: 3,
   minimumAltitudeM: 1,
   maximumAltitudeM: 120,
-  altitudeStepM: 0.5,
+  altitudeStepM: 0.1,
   defaultSpeedMps: 5,
   minimumSpeedMps: 0.5,
   maximumSpeedMps: 30,
-  speedStepMps: 0.5,
+  speedStepMps: 0.1,
   climbThresholdMps: 0.2,
 });
 

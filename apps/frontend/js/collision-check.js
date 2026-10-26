@@ -1,4 +1,4 @@
-import { COLLISION_CONFIG } from './config.js?v=20261019-3';
+import { COLLISION_CONFIG } from './config.js?v=20261026-1';
 
 const HORIZONTAL_SIGMA_M = Math.sqrt(2) * COLLISION_CONFIG.perVehicleHorizontalSigmaM;
 const VERTICAL_SIGMA_M = Math.sqrt(2) * COLLISION_CONFIG.perVehicleVerticalSigmaM;

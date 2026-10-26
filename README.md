@@ -93,7 +93,7 @@ Then run the frontend using the static server command above. Do not run the mock
 - Telemetry WebSocket: `ws://localhost:8000/ws/telemetry`
 - UAV endpoints and server host/port are configured in `apps/backend/app/config.py`.
 - `UAV1_URL`, `UAV2_URL`, and `UAV3_URL` environment variables override the configured connection URLs.
-- Set `UAV1_CAMERA_URL` (and `UAV2_CAMERA_URL`, etc.) to a browser-accessible camera URL to show a UAV feed in the Video tab. MJPEG streams use an HTTP URL such as `http://192.168.4.2:8080/video`; MP4/WebM URLs use the built-in video player. RTSP streams need a gateway that converts them to a browser-compatible format.
+- Edit `UAV_NETWORK_CONFIGS` in `apps/backend/app/config.py` to set each vehicle's IP, MAVLink listen port, MediaMTX camera port, and camera path. The backend generates camera URLs such as `http://172.20.10.4:8889/cam/` and the Video tab reads them directly; no camera `export` is required. MediaMTX WebRTC uses WHEP for the in-page video player and reconnects if the stream stops. Ensure the browser can reach the Pi and that MediaMTX's HTTP port (default TCP 8889) and ICE media port (default UDP 8189) are allowed across the network.
 - For serial hardware, use a MAVSDK serial URL such as `serial:///dev/ttyUSB0:57600` and ensure the device and baud rate match your flight controller.
 
 ## Documentation

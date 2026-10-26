@@ -67,6 +67,8 @@ class Vehicle(VehicleActions, VehicleMissions, VehicleModes, VehicleParameters, 
         self._mission_start_lock = asyncio.Lock()
         self._auto_options_lock = asyncio.Lock()
         self._mission_completion_task: asyncio.Task | None = None
+        self._mission_sync_lock = asyncio.Lock()
+        self._mission_sync_task: asyncio.Task | None = None
 
         self.connected = False
 
@@ -125,9 +127,9 @@ class Vehicle(VehicleActions, VehicleMissions, VehicleModes, VehicleParameters, 
 
             "camera_url": UAV_CAMERA_URLS.get(uav_id),
 
-            # waypoints: the last mission plan uploaded to this vehicle, kept here
+            # waypoints: restored from the autopilot on connection/reconnection and
 
-            # purely for display in the Fleet tab (not re-read from the autopilot).
+            # refreshed after mission upload or clear for display in the Fleet tab.
 
             "waypoints": [],
 
@@ -232,6 +234,7 @@ class Vehicle(VehicleActions, VehicleMissions, VehicleModes, VehicleParameters, 
             for name, watcher in watchers
         ]
         self._tasks.append(asyncio.create_task(self._watch_telemetry_timeout()))
+        self._schedule_mission_sync("initial connection")
 
     async def _run_watcher(self, name, watcher):
         while not self._shutting_down:
@@ -250,11 +253,12 @@ class Vehicle(VehicleActions, VehicleMissions, VehicleModes, VehicleParameters, 
                     try:
                         if getattr(rpc_code(), "name", "") == "UNAVAILABLE":
                             logger.warning(
-                                "[%s] MAVSDK stream %s closed; stopping its watcher",
+                                "[%s] MAVSDK stream %s closed; retrying its watcher",
                                 self.uav_id,
                                 name,
                             )
-                            return
+                            await asyncio.sleep(1)
+                            continue
                     except Exception:
                         pass
                 logger.exception("[%s] Telemetry watcher %s failed; restarting", self.uav_id, name)
@@ -304,7 +308,7 @@ class Vehicle(VehicleActions, VehicleMissions, VehicleModes, VehicleParameters, 
             self._record_telemetry("HEARTBEAT")
 
     def _record_telemetry(self, stream: str):
-
+        was_disconnected = not self.connected
         self._last_telemetry_at = time.monotonic()
 
         if stream not in self._seen_telemetry_streams:
@@ -317,13 +321,46 @@ class Vehicle(VehicleActions, VehicleMissions, VehicleModes, VehicleParameters, 
                 self.connection_url,
             )
 
-        if not self.connected:
-
+        if was_disconnected:
             logger.warning("[%s] TELEMETRY: data resumed on %s", self.uav_id, self.connection_url)
 
         self.connected = True
-
         self.state["connected"] = True
+        if was_disconnected:
+            self._schedule_mission_sync("telemetry resumed")
+
+    def _schedule_mission_sync(self, reason: str):
+        task = self._mission_sync_task
+        if task is not None and not task.done():
+            return
+        task = asyncio.create_task(self._refresh_mission_from_autopilot(reason))
+        self._mission_sync_task = task
+        self._tasks.append(task)
+
+    async def _refresh_mission_from_autopilot(self, reason: str):
+        for attempt in range(3):
+            try:
+                async with self._mission_sync_lock:
+                    await self.sync_mission_from_autopilot()
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                if attempt == 2:
+                    logger.warning(
+                        "[%s] Could not sync stored mission after %s; keeping the last known waypoint list",
+                        self.uav_id,
+                        reason,
+                        exc_info=True,
+                    )
+                    return
+                logger.info(
+                    "[%s] Mission sync after %s failed; retrying (%s/3)",
+                    self.uav_id,
+                    reason,
+                    attempt + 2,
+                )
+                await asyncio.sleep(1)
 
     async def _watch_telemetry_timeout(self):
 

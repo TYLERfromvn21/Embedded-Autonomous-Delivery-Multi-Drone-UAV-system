@@ -1,4 +1,4 @@
-﻿import { BACKEND_HTTP, BACKEND_WS } from './config.js?v=20261019-3';
+﻿import { BACKEND_HTTP, BACKEND_WS } from './config.js?v=20261026-1';
 import { setVehicles } from './state.js?v=20261015-7';
 
 let reconnectTimer;

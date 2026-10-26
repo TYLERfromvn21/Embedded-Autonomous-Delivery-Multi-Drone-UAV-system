@@ -1,7 +1,7 @@
 import { onStateUpdate } from './state.js?v=20261015-7';
 import { renderLandingStations } from './map-view.js?v=20261020-1';
 
-import { COLLISION_CONFIG, LANDING_STATION_CONFIG } from './config.js?v=20261019-3';
+import { COLLISION_CONFIG, LANDING_STATION_CONFIG } from './config.js?v=20261026-1';
 let stations = [];
 let latestVehicles = [];
 

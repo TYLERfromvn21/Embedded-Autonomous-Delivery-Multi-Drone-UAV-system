@@ -13,7 +13,7 @@ import {
   setAutoOptions,
 } from './api.js?v=20261020-1';
 
-import { FLIGHT_CONFIG, FLIGHT_MODE_OPTIONS, loadFlightSettings } from './config.js?v=20261019-3';
+import { FLIGHT_CONFIG, FLIGHT_MODE_OPTIONS, loadFlightSettings } from './config.js?v=20261026-1';
 
 let selectedUavId = null;
 let vehicles = [];
@@ -439,7 +439,10 @@ async function runTargetChange(target) {
   }
   const settings = settingsFor(selectedUavId);
   const value = target === 'altitude' ? settings.altitudeM : settings.speedMps;
-  if (!confirm(`Command ${selectedUavId} to change ${target} to ${value} ${target === 'altitude' ? 'm' : 'm/s'}?`)) return;
+  const prompt = target === 'speed'
+    ? `Save target flight speed ${value} m/s for ${selectedUavId}?`
+    : `Command ${selectedUavId} to change altitude to ${value} m?`;
+  if (!confirm(prompt)) return;
   const result = target === 'altitude'
     ? await changeAltitude(selectedUavId, value)
     : await changeSpeed(selectedUavId, value);
