@@ -36,7 +36,7 @@ UAV_NETWORK_CONFIGS = {
 UAV_CONFIGS = {
     uav_id: os.environ.get(
         f"{uav_id.upper()}_URL",
-        f"udp://0.0.0.0:{settings['mavlink_listen_port']}",
+        f"udp://{settings['ip']}:{settings['mavlink_listen_port']}",
     )
     for uav_id, settings in UAV_NETWORK_CONFIGS.items()
 }
