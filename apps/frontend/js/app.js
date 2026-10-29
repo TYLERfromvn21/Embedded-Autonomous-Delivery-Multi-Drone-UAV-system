@@ -1,7 +1,7 @@
 ﻿// app.js entry point: wires up tab switching and initializes every view.
 
 import { connectWebSocket } from './ws-client.js?v=20261019-3';
-import { initMap } from './map-view.js?v=20261026-2';
+import { initMap } from './map-view.js?v=20261029-2';
 import { initFleetView } from './fleet-view.js?v=20261015-9';
 import { initActionsView } from './actions-view.js?v=20261026-3';
 import { initStationsView } from './station-view.js?v=20261019-2';

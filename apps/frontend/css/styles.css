@@ -352,6 +352,8 @@ button.act.danger { background: var(--danger-dim); border-color: var(--danger); 
 .route-color { width: 8px; height: 8px; margin-top: 3px; flex-shrink: 0; border-radius: 50%; }
 .collision-alerts { margin: 8px 0; color: #f5b8ba; font-size: 11px; line-height: 1.5; }
 .collision-alerts:empty { display: none; }
+
+
 .collision-alerts > strong { display: block; color: var(--danger); margin-bottom: 4px; }
 .collision-item { padding: 5px; margin-top: 4px; background: var(--danger-dim); border-radius: 4px; }
 .collision-model-note { margin-top: 5px; color: var(--text-muted); font-size: 9px; }

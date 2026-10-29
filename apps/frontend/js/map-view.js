@@ -20,6 +20,8 @@ let routeLayers;
 let stationLayers;
 let hasAutoFitted = false;
 let uploadedRoutes = {};
+let selectedRouteSegment = null;
+let selectedSegmentLayer = null;
 let routeRenderSignature = '';
 let stationRenderSignature = '';
 let flightSettings = {};
@@ -209,11 +211,11 @@ function uavIcon(heading, connected) {
   const rotation = heading ?? 0;
   return L.divIcon({
     className: '',
-    html: `<div style="transform: rotate(${rotation}deg); width:22px; height:22px; display:flex; align-items:center; justify-content:center;">
-             <svg width="18" height="18" viewBox="0 0 24 24" fill="${color}"><path d="M12 2 L20 20 L12 16 L4 20 Z"/></svg>
+    html: `<div style="transform: rotate(${rotation}deg); width:36px; height:36px; display:flex; align-items:center; justify-content:center;">
+             <svg width="30" height="30" viewBox="0 0 24 24" fill="${color}"><path d="M12 2 L20 20 L12 16 L4 20 Z"/></svg>
            </div>`,
-    iconSize: [22, 22],
-    iconAnchor: [11, 11],
+    iconSize: [40, 40],
+    iconAnchor: [18, 18],
   });
 }
 
@@ -333,7 +335,7 @@ function renderVehiclePositions(vehicles) {
     const icon = uavIcon(vehicle.heading, vehicle.connected);
     if (!vehicleMarkers[vehicle.uav_id]) {
       vehicleMarkers[vehicle.uav_id] = L.marker([vehicle.lat, vehicle.lon], { icon, title: vehicle.uav_id })
-        .addTo(map).bindTooltip(vehicle.uav_id, { permanent: true, direction: 'top', offset: [0, -12] });
+        .addTo(map).bindTooltip(vehicle.uav_id, { permanent: true, direction: 'top', offset: [0, -21] });
     } else {
       vehicleMarkers[vehicle.uav_id].setLatLng([vehicle.lat, vehicle.lon]);
       vehicleMarkers[vehicle.uav_id].setIcon(icon);
@@ -367,6 +369,34 @@ function routePoints(waypoints) {
     lon: Number(waypoint.lon),
     alt: Number(waypoint.alt ?? MAP_CONFIG.defaultWaypointAltitudeM),
   }));
+}
+
+function formatDms(value, isLatitude) {
+  const hemisphere = isLatitude ? (value < 0 ? 'S' : 'N') : (value < 0 ? 'W' : 'E');
+  const absolute = Math.abs(value);
+  const degrees = Math.floor(absolute);
+  const minutesFloat = (absolute - degrees) * 60;
+  const minutes = Math.floor(minutesFloat);
+  const seconds = (minutesFloat - minutes) * 60;
+  return `${degrees}\u00b0 ${minutes}' ${seconds.toFixed(1)}\" ${hemisphere}`;
+}
+
+function distanceMeters(first, second) {
+  const radians = (degrees) => degrees * Math.PI / 180;
+  const dLat = radians(second.lat - first.lat);
+  const dLon = radians(second.lon - first.lon);
+  const lat1 = radians(first.lat);
+  const lat2 = radians(second.lat);
+  const haversine = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 6371008.8 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+function segmentPopupContent(firstIndex, firstPoint, secondPoint) {
+  return `
+    <strong>WP ${firstIndex + 1}:</strong> ${formatDms(firstPoint.lat, true)}, ${formatDms(firstPoint.lon, false)}<br>
+    <strong>WP ${firstIndex + 2}:</strong> ${formatDms(secondPoint.lat, true)}, ${formatDms(secondPoint.lon, false)}<br>
+    <strong>Distance: ${distanceMeters(firstPoint, secondPoint).toFixed(1)} m</strong>`;
 }
 
 function routesForConflictCheck() {
@@ -416,22 +446,46 @@ function renderRouteLayers() {
     routes.forEach((route) => {
       const points = routePoints(route.waypoints);
       if (points.length > 1) {
-        const line = L.polyline(points.map((point) => [point.lat, point.lon]), {
-          color,
-          weight: route.label === 'Draft' ? 3 : 4,
-          opacity: route.label === 'Draft' ? 0.75 : 0.9,
-          dashArray: route.dashArray,
-          bubblingMouseEvents: false,
+        const selectedRoute = selectedRouteSegment?.uavId === vehicle.uav_id
+          && selectedRouteSegment?.routeLabel === route.label;
+        points.slice(0, -1).forEach((firstPoint, segmentIndex) => {
+          const secondPoint = points[segmentIndex + 1];
+          const selected = selectedRoute && selectedRouteSegment.firstIndex === segmentIndex;
+          const coordinates = [[firstPoint.lat, firstPoint.lon], [secondPoint.lat, secondPoint.lon]];
+          const normalStyle = {
+            color,
+            weight: route.label === 'Draft' ? 3 : 4,
+            opacity: route.label === 'Draft' ? 0.75 : 0.9,
+            dashArray: route.dashArray,
+          };
+          const line = L.polyline(coordinates, {
+            ...normalStyle,
+            color: selected ? '#ffd166' : normalStyle.color,
+            weight: selected ? 6 : normalStyle.weight,
+            opacity: selected ? 1 : normalStyle.opacity,
+            bubblingMouseEvents: false,
+          });
+          const popupContent = segmentPopupContent(segmentIndex, firstPoint, secondPoint);
+          const selectSegment = (event) => {
+            if (selectedSegmentLayer && selectedSegmentLayer !== line) {
+              selectedSegmentLayer.layer.setStyle(selectedSegmentLayer.normalStyle);
+            }
+            selectedRouteSegment = { uavId: vehicle.uav_id, routeLabel: route.label, firstIndex: segmentIndex };
+            selectedSegmentLayer = { layer: line, normalStyle };
+            line.setStyle({ color: '#ffd166', weight: 6, opacity: 1 });
+            L.popup()
+              .setLatLng(event.latlng)
+              .setContent(popupContent)
+              .openOn(map);
+          };
+          line.on('click', selectSegment);
+          routeLayers.addLayer(line);
+          const hitTarget = L.polyline(coordinates, {
+            color, weight: 18, opacity: 0.01, interactive: true, bubblingMouseEvents: false,
+          });
+          hitTarget.on('click', selectSegment);
+          routeLayers.addLayer(hitTarget);
         });
-        const destination = route.waypoints[route.waypoints.length - 1];
-        const waypointDetails = route.waypoints.map((point, waypointIndex) =>
-          `WP ${waypointIndex + 1}: ${point.lat.toFixed(5)}, ${point.lon.toFixed(5)} @ ${Number(point.alt ?? MAP_CONFIG.defaultWaypointAltitudeM).toFixed(1)} m`,
-        ).join('<br>');
-        line.bindPopup(
-          `<strong>${escapeHtml(vehicle.uav_id)} — ${route.label} route</strong><br>`
-          + `Destination: ${destination.lat.toFixed(5)}, ${destination.lon.toFixed(5)}<br>${waypointDetails}`,
-        );
-        routeLayers.addLayer(line);
       }
 
       route.waypoints.forEach((waypoint, waypointIndex) => {
@@ -444,9 +498,8 @@ function renderRouteLayers() {
           bubblingMouseEvents: false,
         });
         marker.bindPopup(
-          `<strong>${escapeHtml(vehicle.uav_id)} ${route.label} — WP ${waypointIndex + 1}</strong><br>`
-          + `Destination: ${waypoint.lat.toFixed(5)}, ${waypoint.lon.toFixed(5)}<br>`
-          + `Altitude: ${Number(waypoint.alt ?? MAP_CONFIG.defaultWaypointAltitudeM).toFixed(1)} m`,
+          `<strong>${escapeHtml(vehicle.uav_id)} ${route.label} &mdash; WP ${waypointIndex + 1}</strong><br>`
+          + `Coordinates: ${formatDms(Number(waypoint.lat), true)}, ${formatDms(Number(waypoint.lon), false)}`,
         );
         routeLayers.addLayer(marker);
       });

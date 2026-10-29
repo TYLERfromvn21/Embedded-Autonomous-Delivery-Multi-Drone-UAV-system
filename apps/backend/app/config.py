@@ -40,7 +40,7 @@ UAV_CONFIGS = {
     )
     for uav_id, settings in UAV_NETWORK_CONFIGS.items()
 }
-
+# {settings['ip']}
 # Browser camera URLs are generated automatically from the settings above.
 UAV_CAMERA_URLS = {
     uav_id: f"http://{settings['ip']}:{settings['camera_port']}{settings['camera_path']}"
