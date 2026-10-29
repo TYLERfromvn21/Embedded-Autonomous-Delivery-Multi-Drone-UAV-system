@@ -12,7 +12,7 @@ import {
   setTakeoffAltitude,
 } from './api.js?v=20261020-1';
 
-import { FLIGHT_CONFIG, FLIGHT_MODE_OPTIONS, LANDING_STATION_CONFIG, MAP_CONFIG, loadFlightSettings as loadSavedFlightSettings } from './config.js?v=20261026-1';
+import { FLIGHT_CONFIG, FLIGHT_MODE_OPTIONS, LANDING_STATION_CONFIG, MAP_CONFIG, loadFlightSettings as loadSavedFlightSettings } from './config.js?v=20261029-5';
 
 let map;
 let vehicleMarkers = {};
@@ -161,27 +161,40 @@ function initializeLeafletMap(mapStatus) {
     }
     return;
   }
-  map = L.map('map', { zoomControl: true }).setView(MAP_CONFIG.initialCenter, MAP_CONFIG.initialZoom);
+  map = L.map('map', { zoomControl: true, maxZoom: MAP_CONFIG.maximumZoom }).setView(MAP_CONFIG.initialCenter, MAP_CONFIG.initialZoom);
   L.marker(MAP_CONFIG.initialCenter)
     .addTo(map)
     .bindPopup('Ho Chi Minh City University of Technology (HCMUT)');
 
-  const tiles = L.tileLayer(MAP_CONFIG.tileUrl, {
-    attribution: MAP_CONFIG.tileAttribution,
+  const tileOptions = {
     maxZoom: MAP_CONFIG.maximumZoom,
+    maxNativeZoom: MAP_CONFIG.maximumNativeZoom,
+  };
+  const satelliteTiles = L.tileLayer(MAP_CONFIG.tileUrl, {
+    ...tileOptions,
+    attribution: MAP_CONFIG.tileAttribution,
+  });
+  const streetTiles = L.tileLayer(MAP_CONFIG.streetTileUrl, {
+    ...tileOptions,
+    attribution: MAP_CONFIG.streetTileAttribution,
   });
   let tileLoaded = false;
-  tiles.on('tileload', () => {
+  satelliteTiles.on('tileload', () => {
     tileLoaded = true;
     mapStatus.hidden = true;
   });
-  tiles.on('tileerror', () => {
+  satelliteTiles.on('tileerror', () => {
     if (!tileLoaded) {
       mapStatus.hidden = false;
       mapStatus.textContent = 'Map tiles unavailable. Live UAV data remains active.';
     }
   });
-  tiles.addTo(map);
+  satelliteTiles.addTo(map);
+  L.control.layers(
+    { Satellite: satelliteTiles, 'Street map': streetTiles },
+    null,
+    { position: 'topright', collapsed: true },
+  ).addTo(map);
   routeLayers = L.layerGroup().addTo(map);
   stationLayers = L.layerGroup().addTo(map);
 

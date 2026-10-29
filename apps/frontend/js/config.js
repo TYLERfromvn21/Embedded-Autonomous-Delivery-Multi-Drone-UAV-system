@@ -52,9 +52,12 @@ export function loadFlightSettings() {
 export const MAP_CONFIG = Object.freeze({
   initialCenter: [10.7721, 106.6578],
   initialZoom: 16,
-  tileUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-  tileAttribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012',
-  maximumZoom: 20,
+  tileUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  tileAttribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+  streetTileUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+  streetTileAttribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012',
+  maximumZoom: 23,
+  maximumNativeZoom: 19,
   defaultWaypointAltitudeM: 3,
   routeColors: ['#2dd4bf', '#f5a524', '#8b8df7', '#f477a8', '#56a8ff', '#a3d977'],
 });
